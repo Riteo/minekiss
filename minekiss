@@ -1,9 +1,12 @@
 #! /bin/sh -e
 
-# TODO: Add a subcommand where to put all of this
+# TODO: Properly manage native libraries by extracting them (https://wiki.vg/Game_Files)
+# TODO: Properly manage legacy and pre-1.6 assets
+# TODO: Add a rule reading system
 # TODO: Add some primitive instance metadata reading
-# TODO: Add some proper way of reading the instance classpath
 # TODO: Add a newinstance command
+# TODO: Detect remote assets changes by looking at the asset index for a faster startup
+# TODO: Find a portable way of switching java versions or at least find a way to configure them
 # TODO: Refactor everything
 
 get_resource_url() {
@@ -14,17 +17,219 @@ get_relative_resource_path() {
  printf "$(printf "%s" "$1" | head -c 2)/$1"
 }
 
+parse_libraries_from_metadata() {
+	# Here the -c flag is important since we want to parse a line as an object.
+	# Also, how the fuck do I split this.
+	jq -rc ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | .downloads.classifiers.\"natives-linux\" // empty, .downloads.artifact // empty"
+}
+
 error() {
 	printf "$1\n"
 	exit 1
 }
 
-if [ "$1" == "" ]
-then
-	error "Missing version id."
-fi
+download() {
+	SELECTED_VERSION="$1"
 
-SELECTED_VERSION="$1"
+	VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
+	VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
+
+	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
+	ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$SELECTED_VERSION.json"
+
+	printf "Fetching the version manifest...\n"
+	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
+	curl -s "$VERSION_MANIFEST_URL" > "$VERSION_MANIFEST_FILE"
+
+	if [ "$?" != 0 ] 
+	then
+		# TODO: Implement an offline mode.
+		error "Unable to fetch the manifest."
+	fi
+
+
+	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" < "$VERSION_MANIFEST_FILE")"
+
+	if [ -f "$VERSION_METADATA_FILE" ] && [ "$VERSION_METADATA_URL" != "" ]
+	then
+		printf "Validating the current version matadata...\n"
+
+		# The SHA1 is for some reason only encoded into the version metadata path.
+		# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
+		VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
+
+		# sha1sum returns the name of the file alongside the actual SHA1
+		VERSION_METADATA_CURRENT_SHA1="$(sha1sum "$VERSION_METADATA_FILE" | cut -d " " -f 1)"
+
+		if [ "$VERSION_METADATA_CURRENT_SHA1" != $VERSION_METADATA_SHA1 ]
+		then
+			printf "Validation failed! Redownloading...\n"
+			curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
+		fi
+	else
+		if [ "$VERSION_METADATA_URL" == "" ]
+		then
+			printf "Invalid version id.\n"
+			exit 1
+		fi
+
+		printf "Fetching the version metadata file...\n"
+		mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
+		curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
+	fi
+
+	VERSION_CLIENT_URL="$(jq -r ".downloads.client.url" < "$VERSION_METADATA_FILE")"
+
+	if [ -f "$VERSION_CLIENT_FILE" ]
+	then
+		printf "Validating the client jar...\n"
+
+		VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
+
+		# sha1sum returns the name of the file alongside the actual SHA1
+		VERSION_CLIENT_CURRENT_SHA1="$(sha1sum "$VERSION_CLIENT_FILE" | cut -d " " -f 1)"
+
+		if [ "$VERSION_CLIENT_CURRENT_SHA1" != "$VERSION_CLIENT_SHA1" ]
+		then
+			printf "Validation failed! Redownloading...\n"
+			curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
+		fi
+	else
+		printf "Downloading the client jar...\n"
+		curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
+	fi
+
+	ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
+
+	if [ -f "$ASSET_INDEX_FILE" ]
+	then
+		printf "Validating the game's asset index...\n"
+
+		ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
+
+		# sha1sum returns the name of the file alongside the actual SHA1
+		ASSET_INDEX_CURRENT_SHA1="$(sha1sum "$ASSET_INDEX_FILE" | cut -d " " -f 1)"
+		if [ "$ASSET_INDEX_CURRENT_SHA1" != "$ASSET_INDEX_SHA1" ]
+		then
+			printf "Validation failed! Redownloading...\n"
+			curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
+		fi
+	else
+		printf "Downloading the game's asset index...\n"
+
+		mkdir -p "$(dirname $ASSET_INDEX_FILE)"
+		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
+
+		if [ "$?" != 0 ]
+		then
+			# TODO: Implement an offline mode.
+			error "Unable to fetch the game's asset index."
+		fi
+	fi
+
+	printf "Validating the game's assets...\n"
+
+	jq -r ".objects | keys[]" < "$ASSET_INDEX_FILE" | while read -r ASSET_GAME_PATH
+	do
+		ASSET_SHA1="$(jq -r ".objects.\"$ASSET_GAME_PATH\".hash" < "$ASSET_INDEX_FILE")"
+
+		ASSET_IS_VIRTUAL="$(jq -r ".virtual // .map_to_resources" < "$ASSET_INDEX_FILE")"
+
+		if  [ "$ASSET_IS_VIRTUAL" == true ]
+		then
+			ASSET_FILE="$ASSETS_DIR/virtual/legacy/$ASSET_GAME_PATH"
+		else
+			ASSET_FILE="$ASSETS_DIR/objects/$(get_relative_resource_path "$ASSET_SHA1")"
+		fi
+
+		if [ -f "$ASSET_FILE" ]
+		then
+			ASSET_CURRENT_SHA1="$(sha1sum "$ASSET_FILE" | cut -d " " -f 1)"
+
+			printf "Validating \"%s\"...\n" "$ASSET_GAME_PATH"
+
+			if [ "$ASSET_CURRENT_SHA1" != "$ASSET_SHA1" ]
+			then
+				printf "Redownloading \"%s\"...\n" "$ASSET_GAME_PATH"
+
+				mkdir -p "$(dirname "$ASSET_FILE")"
+				curl -s "$RESOURCES_URL/$(get_relative_resource_path "$ASSET_SHA1")" > "$ASSET_FILE"
+			fi
+		else
+			printf "Downloading \"$ASSET_GAME_PATH\"...\n"
+			mkdir -p "$(dirname "$ASSET_FILE")"
+			curl -s "$RESOURCES_URL/$(get_relative_resource_path "$ASSET_SHA1")" > "$ASSET_FILE"
+		fi
+	done
+
+	printf "Validating the game's libraries...\n"
+
+		parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | while read -r ARTIFACT_OBJECT
+	do
+		LIBRARY_RELATIVE_PATH="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".path")"
+		LIBRARY_SHA1="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".sha1")"
+
+		LIBRARY_FILE_NAME="$(basename "$LIBRARY_RELATIVE_PATH")"
+
+		LIBRARY_FILE="$LIBRARIES_DIR/$LIBRARY_RELATIVE_PATH"
+		mkdir -p "$(dirname "$LIBRARY_FILE")"
+
+		LIBRARY_URL="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".url")"
+
+		if [ -f "$LIBRARIES_DIR/LIBRARY_RELATIVE_PATH" ]
+		then
+			printf "Validating \"%s\"...\n" "$LIBRARY_FILE_NAME"
+
+			LIBRARY_CURRENT_SHA1="$(sha1sum "$LIBRARY_FILE" | cut -d " " -f 1)"
+
+			if [ "$LIBRARY_CURRENT_SHA1" != "$LIBRARY_SHA1" ]
+			then
+				printf "Redownloading \"%s\"...\n" "$LIBRARY_FILE_NAME"
+				curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
+			fi
+		else
+			printf "Downloading \"%s\"...\n" "$LIBRARY_FILE_NAME"
+			curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
+		fi
+	done
+}
+
+start() {
+	SELECTED_VERSION="$1"
+
+	VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
+	VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
+
+	if [ ! -f "$VERSION_METADATA_FILE" ]
+	then
+		error "No such version downloaded."
+	fi
+
+	CLASSPATH="$(parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | jq -r "\"$LIBRARIES_DIR/\" + .path" | tr "\n" ":")"
+	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
+
+	MAIN_CLASS="$(jq -r ".mainClass" < "$VERSION_METADATA_FILE")"
+	ASSET_INDEX_ID="$(jq -r ".assetIndex.id" < "$VERSION_METADATA_FILE")"
+
+	# TODO: Find a way to manage stuff like resolution which is behind a rule.
+	# TODO: Manage legacy version support properly (the current solution doesn't work).
+	GAME_ARGUMENTS="$(echo $(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" < "$VERSION_METADATA_FILE" | tr "\n" " "))"
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${version_name}'"|$SELECTED_VERSION|")"
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${assets_root}'"|$ASSETS_DIR|")"
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${assets_index_name}'"|$ASSET_INDEX_ID|")"
+
+	# Compat option
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${game_assets}'"|$ASSETS_DIR/virtual/$ASSET_INDEX_ID/|")"
+
+	if [ "$JAVA" == "" ]
+	then
+		JAVA="java"
+	fi
+
+	# TODO: Read metadata from the instance to choose the java version
+	# TODO: Pass the (properly formatted) game arguments
+	"$JAVA" -cp "$CLASSPATH" "$MAIN_CLASS" $GAME_ARGUMENTS
+}
 
 # Configuration
 
@@ -65,158 +270,39 @@ then
 	TEMP_DIR="/tmp/minekiss"
 fi
 
-VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
-VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
-
-# Game downloading
-VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
-ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$SELECTED_VERSION.json"
-
-printf "Fetching the version manifest...\n"
-mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
-curl -s "$VERSION_MANIFEST_URL" > "$VERSION_MANIFEST_FILE"
-
-if [ "$?" != 0 ] 
+if [ "$1" == "download" ]
 then
-	# TODO: Implement an offline mode.
-	error "Unable to fetch the manifest."
-fi
-
-
-VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" < "$VERSION_MANIFEST_FILE")"
-
-if [ -f "$VERSION_METADATA_FILE" ] && [ "$VERSION_METADATA_URL" != "" ]
-then
-	printf "Validating the current version matadata...\n"
-
-	# The SHA1 is for some reason only encoded into the version metadata path.
-	# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
-	VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
-
-	# sha1sum returns the name of the file alongside the actual SHA1
-	VERSION_METADATA_CURRENT_SHA1="$(sha1sum "$VERSION_METADATA_FILE" | cut -d " " -f 1)"
-
-	if [ "$VERSION_METADATA_CURRENT_SHA1" != $VERSION_METADATA_SHA1 ]
+	if [ "$2" != "" ]
 	then
-		printf "Validation failed! Redownloading...\n"
-		curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
-	fi
-else
-	if [ "$VERSION_METADATA_URL" == "" ]
-	then
-		printf "Invalid version id.\n"
-		exit 1
-	fi
-
-	printf "Fetching the version metadata file...\n"
-	mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
-	curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
-fi
-
-VERSION_CLIENT_URL="$(jq -r ".downloads.client.url" < "$VERSION_METADATA_FILE")"
-
-if [ -f "$VERSION_CLIENT_FILE" ]
-then
-	printf "Validating the client jar...\n"
-
-	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
-
-	# sha1sum returns the name of the file alongside the actual SHA1
-	VERSION_CLIENT_CURRENT_SHA1="$(sha1sum "$VERSION_CLIENT_FILE" | cut -d " " -f 1)"
-
-	if [ "$VERSION_CLIENT_CURRENT_SHA1" != "$VERSION_CLIENT_SHA1" ]
-	then
-		printf "Validation failed! Redownloading...\n"
-		curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
-	fi
-else
-	printf "Downloading the client jar...\n"
-	curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
-fi
-
-ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
-
-if [ -f "$ASSET_INDEX_FILE" ]
-then
-	printf "Validating the game's asset index...\n"
-
-	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
-
-	# sha1sum returns the name of the file alongside the actual SHA1
-	ASSET_INDEX_CURRENT_SHA1="$(sha1sum "$ASSET_INDEX_FILE" | cut -d " " -f 1)"
-	if [ "$ASSET_INDEX_CURRENT_SHA1" != "$ASSET_INDEX_SHA1" ]
-	then
-		printf "Validation failed! Redownloading...\n"
-		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
-	fi
-else
-	printf "Downloading the game's asset index...\n"
-
-	mkdir -p "$(dirname $ASSET_INDEX_FILE)"
-	curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
-
-	if [ "$?" != 0 ]
-	then
-		# TODO: Implement an offline mode.
-		error "Unable to fetch the game's asset index."
-	fi
-fi
-
-printf "Validating the game's assets...\n"
-
-jq -r ".objects | keys[]" < "$ASSET_INDEX_FILE" | while read -r ASSET_GAME_PATH
-do
-	ASSET_SHA1="$(jq -r ".objects.\"$ASSET_GAME_PATH\".hash" < "$ASSET_INDEX_FILE")"
-	ASSET_FILE="$ASSETS_DIR/objects/$(get_relative_resource_path "$ASSET_SHA1")"
-
-	if [ -f "$ASSET_FILE" ]
-	then
-		ASSET_CURRENT_SHA1="$(sha1sum "$ASSET_FILE" | cut -d " " -f 1)"
-
-		printf "Validating \"%s\"...\n" "$ASSET_GAME_PATH"
-
-		if [ "$ASSET_CURRENT_SHA1" != "$ASSET_SHA1" ]
-		then
-			printf "Redownloading \"%s\"...\n" "$ASSET_GAME_PATH"
-			mkdir -p "$(dirname "$ASSET_FILE")"
-			curl -s "$RESOURCES_URL/$(get_relative_resource_path "$ASSET_SHA1")" > "$ASSET_FILE"
-		fi
+		download "$2"
 	else
-		printf "Downloading \"$ASSET_GAME_PATH\"...\n"
-		mkdir -p "$(dirname "$ASSET_FILE")"
-		curl -s "$RESOURCES_URL/$(get_relative_resource_path "$ASSET_SHA1")" > "$ASSET_FILE"
+		printf "Usage: $0 download ID\n"
+		printf "Downloads and verifies the specified mincraft version into minekiss' cache directory.\n"
 	fi
-done
+	exit 0
+fi
 
-printf "Validating the game's libraries...\n"
-
-# Here the -c flag is important since we want to parse a line as an object.
-# Also, how the fuck do I split this.
-jq -rc ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | if .natives.linux != null then .downloads.classifiers.\"natives-linux\", .downloads.artifact else .downloads.artifact end" < "$VERSION_METADATA_FILE" | while read -r ARTIFACT_OBJECT
-do
-	LIBRARY_RELATIVE_PATH="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".path")"
-	LIBRARY_SHA1="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".sha1")"
-
-	LIBRARY_FILE_NAME="$(basename "$LIBRARY_RELATIVE_PATH")"
-
-	LIBRARY_FILE="$LIBRARIES_DIR/$LIBRARY_RELATIVE_PATH"
-	mkdir -p "$(dirname "$LIBRARY_FILE")"
-
-	LIBRARY_URL="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".url")"
-
-	if [ -f "$LIBRARIES_DIR/LIBRARY_RELATIVE_PATH" ]
+if [ "$1" == "start" ]
+then
+	if [ "$2" != "" ]
 	then
-		printf "Validating \"%s\"...\n" "$LIBRARY_FILE_NAME"
-
-		LIBRARY_CURRENT_SHA1="$(sha1sum "$LIBRARY_FILE" | cut -d " " -f 1)"
-
-		if [ "$LIBRARY_CURRENT_SHA1" != "$LIBRARY_SHA1" ]
-		then
-			printf "Redownloading \"%s\"...\n" "$LIBRARY_FILE_NAME"
-			curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
-		fi
-	else
-		printf "Downloading \"%s\"...\n" "$LIBRARY_FILE_NAME"
-		curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
+		start "$2"
+else
+		printf "Usage: $0 start ID\n"
+		printf "start: Runs the specified minecraft version (if dowloaded) into the current drectory.\n"
 	fi
-done
+	exit 0
+fi
+
+if [ "$1" != "" ]
+then
+	printf "Unrecognized command: \"$1\"\n"
+else
+	printf "minekiss - A minecraft instance system with a powerful package manager.\n"
+	printf "Available commands:\n"
+	printf " - download: Downloads and verifies the specified minecraft version into minekiss' cache directory.\n"
+	printf " - start: Runs the specified minecraft version (if dowloaded) into the current drectory.\n"
+fi
+exit 0
+
+
