@@ -40,6 +40,11 @@ warning() {
 	printf "! $1\n"
 }
 
+cleanup() {
+	info "Cleaning up..."
+	rm -rf "$TEMP_DIR"
+}
+
 download() {
 	SELECTED_VERSION="$1"
 
@@ -116,28 +121,36 @@ download() {
 
 		if [ $? == 0 ]
 		then
-			printf "Validation failed! Redownloading...\n"
+			info "Validation failed! Redownloading..."
 			curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
 		fi
 	else
-		printf "Downloading the game's asset index...\n"
+		info "Downloading the game's asset index..."
 
 		mkdir -p "$(dirname $ASSET_INDEX_FILE)"
 		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
 	fi
 
-	printf "Validating the game's assets...\n"
+	# TODO: Add support for the older asset indexes.
+	info "Validating the game's assets..."
 
-	# TODO: Add support for the older assets formats.
-	# TODO: Add a nice and clean way of displaying the relative path of the
-	# downloading asset.
-	jq -r ".objects[] | .hash + \" \" + \"$ASSETS_DIR/objects/\" + .hash[0:2] + \"/\" + .hash" < "$ASSET_INDEX_FILE" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 | while read -r FILE_PATH
+	CONVERTED_ASSET_INDEX="$TEMP_DIR/converted_asset_index"
+	FAILED_ASSETS="$TEMP_DIR/failed_assets"
+
+	# Le epic conversion: [le hash] [le actual path] [le game path]
+	# This allows us to use the shell's own word splitting as a blazingly fast line
+	# by line "parser" for our intermediate format. Maybe we could use FIFOs but I
+	# think that would just make things more complicated for nothing.
+	jq -r ".objects | to_entries[] | .value.hash + \" \" + \"$ASSETS_DIR/objects/\" + .value.hash[0:2] + \"/\" + .value.hash + \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+
+	awk '{print $1 "  " $2}' < "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
+
+
+	grep -f "$FAILED_ASSETS" < "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH
 	do
-		ASSET_SHA1="$(basename "$FILE_PATH")"
-
-		info "Downloading \"$ASSET_SHA1\"..."
-		mkdir -p "$(dirname "$FILE_PATH")"
-		curl -s "$(get_resource_url "$ASSET_SHA1")" > "$FILE_PATH"
+		info "Downloading \"$ASSET_GAME_PATH\"..."
+		mkdir -p "$(dirname "$ASSET_FILE_PATH")"
+		curl -s "$(get_resource_url "$ASSET_SHA1")" > "$ASSET_FILE_PATH"
 	done
 
 	info "Validating the game's libraries..."
@@ -250,6 +263,11 @@ if [ "$TEMP_DIR" == "" ]
 then
 	TEMP_DIR="/tmp/minekiss"
 fi
+
+mkdir "$TEMP_DIR"
+
+trap exit INT
+trap cleanup EXIT
 
 if [ "$1" == "download" ]
 then
