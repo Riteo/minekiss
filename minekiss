@@ -175,7 +175,7 @@ start() {
 		error "No such version downloaded."
 	fi
 
-	CLASSPATH="$(parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | jq -r "\"$LIBRARIES_DIR/\" + .path" | tr "\n" ":")"
+	CLASSPATH="$(parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
 	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
 
 	MAIN_CLASS="$(jq -r ".mainClass" < "$VERSION_METADATA_FILE")"
