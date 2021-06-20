@@ -22,9 +22,9 @@ get_resource_url() {
 }
 
 parse_libraries_from_metadata() {
-	# Here the -c flag is important since we want to parse a line as an object.
-	# Also, how the fuck do I split this.
-	jq -rc ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | .downloads.classifiers.\"natives-linux\" // empty, .downloads.artifact // empty"
+	# Format: [path] [sha1sum] [url]
+	# Also how the fuck do I split this.
+	jq -r ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | .downloads.classifiers.\"natives-linux\" // empty, .downloads.artifact // empty | \"$LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url"
 }
 
 error() {
@@ -34,6 +34,10 @@ error() {
 
 info() {
 	printf -- "-> $1\n"
+}
+
+subinfo() {
+	printf -- " -> $1\n"
 }
 
 warning() {
@@ -52,6 +56,9 @@ download() {
 	VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
 
 	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
+
+	# TODO: Properly parse the asset index ID as there exist "legacy" and "pre-1.6"
+	# indexes.
 	ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$SELECTED_VERSION.json"
 
 	info "Fetching the latest version manifest..."
@@ -66,66 +73,50 @@ download() {
 			error "Invalid version id!"
 	fi
 
-	if [ -f "$VERSION_METADATA_FILE" ]
+	# Metadata
+	info "Validating the current version metadata..."
+
+	# The SHA1 is for some reason only encoded into the version metadata path.
+	# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
+	VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
+
+	printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
+
+	if [ $? != 0 ]
 	then
-		info "Validating the current version metadata..."
-
-		# The SHA1 is for some reason only encoded into the version metadata path.
-		# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
-		VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
-
-		printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
-
-		if [ $? != 0 ]
-		then
-			info "Validation failed! Redownloading..."
-			curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
-		fi
-	else
-		info "Fetching the version metadata file..."
+		subinfo "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
 		mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
 		curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
 	fi
 
+	# Client
 	VERSION_CLIENT_URL="$(jq -r ".downloads.client.url" < "$VERSION_METADATA_FILE")"
 
-	if [ -f "$VERSION_CLIENT_FILE" ]
+	info "Validating the client jar..."
+
+	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
+
+	printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
+
+	if [ $? != 0 ]
 	then
-		info "Validating the client jar..."
-
-		VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
-
-		printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
-
-		if [ $? != 0 ]
-		then
-			info "Validation failed! Redownloading..."
-			curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
-		fi
-	else
-		info "Downloading the client jar..."
+		subinfo "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
 		# We don't run mkdir here because the client will be downloaded in the same
 		# directory of the version metadata.
 		curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
 	fi
 
+	# Asset index
+	info "Validating the game's asset index..."
+
 	ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
+	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
 
-	if [ -f "$ASSET_INDEX_FILE" ]
+	printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
+
+	if [ $? != 0 ]
 	then
-		info "Validating the game's asset index..."
-
-		ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
-
-		printf "%s  %s\n" "$ASSET_INDEX_SHA1"  "$ASSET_FILE" | sha1sum -c 1>/dev/null 2>&1
-
-		if [ $? == 0 ]
-		then
-			info "Validation failed! Redownloading..."
-			curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
-		fi
-	else
-		info "Downloading the game's asset index..."
+		subinfo "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
 
 		mkdir -p "$(dirname $ASSET_INDEX_FILE)"
 		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
@@ -145,46 +136,31 @@ download() {
 
 	awk '{print $1 "  " $2}' < "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
 
-
 	grep -f "$FAILED_ASSETS" < "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH
 	do
-		info "Downloading \"$ASSET_GAME_PATH\"..."
+		subinfo "Downloading \"$ASSET_GAME_PATH\"..."
 		mkdir -p "$(dirname "$ASSET_FILE_PATH")"
 		curl -s "$(get_resource_url "$ASSET_SHA1")" > "$ASSET_FILE_PATH"
 	done
 
+	# Libaries
 	info "Validating the game's libraries..."
 
+	CONVERTED_LIBRARY_INDEX="$TEMP_DIR/converted_library_index"
+	FAILED_LIBS="$TEMP_DIR/failed_libs"
+
+	parse_libraries_from_metadata < "$VERSION_METADATA_FILE" > "$CONVERTED_LIBRARY_INDEX"
+
+	awk '{print $2 "  " $1}' < "$CONVERTED_LIBRARY_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_LIBS"
+
 	# TODO: Decompress properly the native libraries into a specialized directory.
-	# TODO: Make the parsing faster and cleaner using an approach similar to the
-	# above.
-	parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | while read -r ARTIFACT_OBJECT
+	grep -f "$FAILED_LIBS" < "$CONVERTED_LIBRARY_INDEX" | while read -r LIBRARY_FILE LIBRARY_SHA1 LIBRARY_URL
 	do
-		LIBRARY_RELATIVE_PATH="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".path")"
-		LIBRARY_SHA1="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".sha1")"
-
-		LIBRARY_FILE_NAME="$(basename "$LIBRARY_RELATIVE_PATH")"
-
-		LIBRARY_FILE="$LIBRARIES_DIR/$LIBRARY_RELATIVE_PATH"
+		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
 		mkdir -p "$(dirname "$LIBRARY_FILE")"
 
-		LIBRARY_URL="$(printf "%s" "$ARTIFACT_OBJECT" | jq -r ".url")"
-
-		if [ -f "$LIBRARY_FILE" ]
-		then
-			info "Validating \"$LIBRARY_FILE_NAME\"..."
-
-			LIBRARY_CURRENT_SHA1="$(sha1sum "$LIBRARY_FILE" | cut -d " " -f 1)"
-
-			if [ "$LIBRARY_CURRENT_SHA1" != "$LIBRARY_SHA1" ]
-			then
-				info "Redownloading \"$LIBRARY_FILE_NAME\"..."
-				curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
-			fi
-		else
-			info "Downloading \"$LIBRARY_FILE_NAME\"..."
+		subinfo "Downloading \"$LIBRARY_FILE_NAME\"..."
 			curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
-		fi
 	done
 }
 
