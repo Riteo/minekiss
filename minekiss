@@ -28,7 +28,7 @@ parse_libraries_from_metadata() {
 }
 
 error() {
-	printf "X $1\n"
+	printf "XX $1\n"
 	exit 1
 }
 
@@ -41,7 +41,7 @@ subinfo() {
 }
 
 warning() {
-	printf "! $1\n"
+	printf "!! $1\n"
 }
 
 cleanup() {
