@@ -56,10 +56,6 @@ download() {
 
 	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
 
-	# TODO: Properly parse the asset index ID as there exist "legacy" and "pre-1.6"
-	# indexes.
-	ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$SELECTED_VERSION.json"
-
 	info "Fetching the latest version manifest..."
 
 	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
@@ -69,7 +65,13 @@ download() {
 
 	if [ "$VERSION_METADATA_URL" == "" ]
 	then
+		if [ -f "$VERSION_METADATA_FILE" ]
+		then
+			warning "Custom version detected! Its files won't be validated."
+			return 0
+		else
 			error "Invalid version id!"
+		fi
 	fi
 
 	# Metadata
@@ -108,8 +110,11 @@ download() {
 	# Asset index
 	info "Validating the game's asset index..."
 
+	ASSET_INDEX_ID="$(jq -r ".assetIndex.id" < "$VERSION_METADATA_FILE")"
 	ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
 	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
+
+	ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
 
 	printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
 
@@ -123,6 +128,11 @@ download() {
 
 	# TODO: Add support for the older asset indexes.
 	info "Validating the game's assets..."
+
+	if [ "$ASSET_INDEX_ID" == "pre-1.6" ] || [ "$ASSET_INDEX_ID" == "legacy" ]
+	then
+		error "Legacy (pre 1.6) version detected! Download stopped as legacy asset managing is not supported yet."
+	fi
 
 	CONVERTED_ASSET_INDEX="$TEMP_DIR/converted_asset_index"
 	FAILED_ASSETS="$TEMP_DIR/failed_assets"
@@ -169,10 +179,7 @@ start() {
 	VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
 	VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
 
-	if [ ! -f "$VERSION_METADATA_FILE" ]
-	then
-		error "No such version downloaded."
-	fi
+	download "$SELECTED_VERSION"
 
 	CLASSPATH="$(parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
 	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
@@ -181,22 +188,20 @@ start() {
 	ASSET_INDEX_ID="$(jq -r ".assetIndex.id" < "$VERSION_METADATA_FILE")"
 
 	# TODO: Find a way to manage stuff like resolution which is behind a rule.
-	# TODO: Manage legacy version support properly (the current solution doesn't work).
+	# TODO: Format all arguments.
 	GAME_ARGUMENTS="$(echo $(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" < "$VERSION_METADATA_FILE" | tr "\n" " "))"
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${version_name}'"|$SELECTED_VERSION|")"
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${assets_root}'"|$ASSETS_DIR|")"
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${assets_index_name}'"|$ASSET_INDEX_ID|")"
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${version_type}'"|$(jq -r .type < "$VERSION_METADATA_FILE")|")"
 
-	# Compat option
-	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${game_assets}'"|$ASSETS_DIR/virtual/$ASSET_INDEX_ID/|")"
-
+	# TODO: Find out if there's a better way to switch Java runtimes.
 	if [ "$JAVA" == "" ]
 	then
 		JAVA="java"
 	fi
 
-	# TODO: Read metadata from the instance to choose the java version
-	# TODO: Pass the (properly formatted) game arguments
+	# TODO: Read metadata from the instance to choose the right Java version.
 	"$JAVA" -cp "$CLASSPATH" "$MAIN_CLASS" $GAME_ARGUMENTS
 }
 
