@@ -1,13 +1,12 @@
 #! /bin/sh
 
-# TODO: Add some good error handling where needed
 # TODO: Properly manage native libraries by extracting them (https://wiki.vg/Game_Files)
+# TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
+# TODO: Properly parse all library and jvm rules
+# TODO: Implement authentication and offline mode
+# TODO: Add some more error handling
 # TODO: Properly manage legacy and pre-1.6 assets
-# TODO: Add a rule reading system
-# TODO: Add some primitive instance metadata reading
-# TODO: Add a newinstance command
-# TODO: Detect remote assets changes by looking at the asset index for a faster startup
-# TODO: Find a portable way of switching java versions or at least find a way to configure them
+# TODO: Find a portable way of switching Java versions or at least find a way to configure them
 # TODO: Refactor everything
 
 # Bruh
