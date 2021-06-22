@@ -12,6 +12,12 @@
 # Bruh
 export LC_ALL="C"
 
+OLD_STTY="$(stty -g)"
+
+is_directory_empty() {
+ ls -A $1 | grep -q .
+}
+
 get_relative_resource_path() {
  printf "$(printf "%s" "$1" | head -c 2)/$1"
 }
@@ -44,7 +50,12 @@ warning() {
 }
 
 cleanup() {
-	info "Cleaning up..."
+	stty "$OLD_STTY"
+
+	if is_directory_empty "$TEMP_DIR"
+	then info "Cleaning up..."
+	fi
+
 	rm -rf "$TEMP_DIR"
 }
 
@@ -81,9 +92,7 @@ download() {
 	# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
 	VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
 
-	printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
-
-	if [ $? != 0 ]
+	if ! printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
 		subinfo "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
 		mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
@@ -97,9 +106,7 @@ download() {
 
 	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
 
-	printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
-
-	if [ $? != 0 ]
+	if ! printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
 		subinfo "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
 		# We don't run mkdir here because the client will be downloaded in the same
@@ -116,9 +123,7 @@ download() {
 
 	ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
 
-	printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
-
-	if [ $? != 0 ]
+	if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
 		subinfo "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
 
@@ -173,7 +178,7 @@ download() {
 	done
 }
 
-start() {
+start_version() {
 	SELECTED_VERSION="$1"
 
 	VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
@@ -205,6 +210,27 @@ start() {
 	"$JAVA" -cp "$CLASSPATH" "$MAIN_CLASS" $GAME_ARGUMENTS
 }
 
+add_user() {
+	printf "Email address (or if legacy, username): "
+	read -r EMAIL_ADDRESS
+
+	# We do this because we don't want to show the password being written.
+	stty -echo
+	printf "Password: "
+	read -r PASSWORD
+	stty echo
+	printf "\n"
+}
+
+authenticate() {
+	if [ ! -f "$USERDATA_DIR/client_id" ]
+	then
+		info "Client id file missing, generating a new client id..."
+		# Mhh, should I make this a read-only file?
+		(umask 077; uuidgen > "$USERDATA_DIR/client_id")
+	fi
+}
+
 # Configuration
 
 if [ "$VERSION_MANIFEST_URL" == "" ]
@@ -223,6 +249,13 @@ then
 fi
 
 CACHE_DIR="$XDG_CACHE_HOME/minekiss"
+
+if [ "$XDG_DATA_HOME" == "" ]
+then
+	XDG_DATA_HOME="$HOME/.local/share"
+fi
+
+USERDATA_DIR="$XDG_DATA_HOME/minekiss"
 
 if [ "$ASSETS_DIR" == "" ]
 then
@@ -244,7 +277,8 @@ then
 	TEMP_DIR="/tmp/minekiss"
 fi
 
-mkdir "$TEMP_DIR"
+mkdir -p "$TEMP_DIR"
+mkdir -p "$USERDATA_DIR"
 
 trap exit INT
 trap cleanup EXIT
@@ -265,10 +299,22 @@ if [ "$1" == "start" ]
 then
 	if [ "$2" != "" ]
 	then
-		start "$2"
-else
+		start_version "$2"
+	else
 		printf "Usage: $0 start ID\n"
 		printf "start: Runs the specified minecraft version (if dowloaded) into the current drectory.\n"
+	fi
+	exit 0
+fi
+
+if [ "$1" == "user" ]
+then
+	if [ "$2" == "add" ]
+	then
+		add_user "$3"
+	else
+		printf "Usage: $0 user add/remove/list\n"
+		printf "user: manage the current user profiles.\n"
 	fi
 	exit 0
 fi
@@ -279,9 +325,8 @@ then
 else
 	printf "minekiss - A simple minecraft launcher written entirely in POSIX shell.\n"
 	printf "Available commands:\n"
-	printf " - download: Downloads and verifies the specified minecraft version into minekiss' cache directory.\n"
-	printf " - start: Runs the specified minecraft version (if dowloaded) into the current drectory.\n"
+	printf " - download: download and verify the specified minecraft version into minekiss' cache directory.\n"
+	printf " - start: run the specified minecraft version (if dowloaded) into the current drectory.\n"
+	printf " - user: manage the current user profiles.\n"
 fi
 exit 0
-
-
