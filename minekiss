@@ -33,20 +33,20 @@ parse_libraries_from_metadata() {
 }
 
 error() {
-	printf "XX $1\n"
+	printf '\033[38;5;1mXX\033[m %s\n' "$1"
 	exit 1
 }
 
 info() {
-	printf -- "-> $1\n"
+	printf -- '\033[38;5;2m->\033[m %s\n' "$1"
 }
 
 subinfo() {
-	printf -- " -> $1\n"
+	printf -- '\033[38;5;2m ->\033[m %s\n' "$1"
 }
 
 warning() {
-	printf "!! $1\n"
+	printf -- '\033[38;5;3m!!\033[m %s\n' "$1"
 }
 
 cleanup() {
