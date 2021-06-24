@@ -1,5 +1,6 @@
 #! /bin/sh
 
+# TOOD: Separate temp dirs based on PID or something else to avoid collisions
 # TODO: Properly manage native libraries by extracting them (https://wiki.vg/Game_Files)
 # TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
 # TODO: Properly parse all library and jvm rules
@@ -200,6 +201,12 @@ start_version() {
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${assets_index_name}'"|$ASSET_INDEX_ID|")"
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${version_type}'"|$(jq -r .type < "$VERSION_METADATA_FILE")|")"
 
+	SELECTED_ACCOUNT_DIR="$USERDATA_DIR/accounts/$(cat "$USERDATA_DIR/selected_account")"
+	SELECTED_UUID="$(cat "$SELECTED_ACCOUNT_DIR/profiles/selected_uuid")"
+
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${auth_uuid}'"|$SELECTED_UUID|")"
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${auth_access_token}'"|$(cat "$SELECTED_ACCOUNT_DIR/auth_token")|")"
+	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${auth_player_name}'"|$(cat "$SELECTED_ACCOUNT_DIR/profiles/$SELECTED_UUID")|")"
 	# TODO: Find out if there's a better way to switch Java runtimes.
 	if [ "$JAVA" == "" ]
 	then
@@ -210,25 +217,84 @@ start_version() {
 	"$JAVA" -cp "$CLASSPATH" "$MAIN_CLASS" $GAME_ARGUMENTS
 }
 
+# NOTE: This as of now just returns the only select profile (if any) as i'll
+#       still have to implement Microsoft login properly when it becomes more
+#       widespread. This will suffice for now.
+#
+# FORMAT: [ACCESS TOKEN] [PROFILE NAME] [PROFILE UUID]
+authenticate_user() {
+	curl -s --fail-with-body -H "Content-Type: application/json" -d \
+	"{
+		\"agent\": {
+			\"name\": \"Minecraft\",
+			\"version\": 1
+		},
+		\"username\": \"$1\",
+		\"password\": \"$2\"
+	}" "$AUTHENTICATION_SERVER_URL"/authenticate | jq -r \
+	"if has(\"accessToken\")
+	then
+		if (has(\"selectedProfile\"))
+		then .accessToken + \" \" + (.selectedProfile | .name + \" \" + .id )
+		else \"No Minecraft profile found.\" | halt_error(2)
+		end
+	else \"Authentication failed: \" + .errorMessage + \"\n\" | halt_error(1)
+	end"
+}
+
+write_account() {
+	EMAIL_ADDRESS="$1"
+	AUTH_TOKEN="$2"
+	PROFILE_NAME="$3"
+	PROFILE_UUID="$4"
+
+	ACCOUNT_DIR="$USERDATA_DIR/accounts/$EMAIL_ADDRESS"
+
+	umask 077
+	mkdir -p "$ACCOUNT_DIR/profiles"
+	printf "%s\n" "$AUTH_TOKEN" > "$ACCOUNT_DIR/auth_token"
+	printf "%s\n" "$PROFILE_NAME" > "$ACCOUNT_DIR/profiles/$PROFILE_UUID"
+	printf "$PROFILE_UUID" > "$ACCOUNT_DIR/profiles/selected_uuid"
+	printf "$EMAIL_ADDRESS" > "$USERDATA_DIR/selected_account"
+}
+
+is_token_valid() {
+	curl -s -f -H "Content-Type: application/json" -d "{\"accessToken\":\"$1\"}" "$AUTHENTICATION_SERVER_URL"/validate
+}
+
 add_user() {
+
 	printf "Email address (or if legacy, username): "
 	read -r EMAIL_ADDRESS
 
-	# We do this because we don't want to show the password being written.
+	ACCOUNT_DIR="$USERDATA_DIR/accounts/$EMAIL_ADDRESS"
+
+	if [ -d "$ACCOUNT_DIR" ]
+	then
+		error "Account already added."
+	fi
+
+	# We don't want to show the password on the terminal.
 	stty -echo
 	printf "Password: "
 	read -r PASSWORD
 	stty echo
 	printf "\n"
+
+	authenticate_user "$EMAIL_ADDRESS" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
+	then
+		write_account "$EMAIL_ADDRESS" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
+		return 0
+	else
+		return 1
+	fi
 }
 
-authenticate() {
-	if [ ! -f "$USERDATA_DIR/client_id" ]
-	then
-		info "Client id file missing, generating a new client id..."
-		# Mhh, should I make this a read-only file?
-		(umask 077; uuidgen > "$USERDATA_DIR/client_id")
-	fi
+list_accounts() {
+  ls -1d "$USERDATA_DIR/accounts"/*/ 2>/dev/null | while read -r ACCOUNT
+  do
+	  printf "%s\n" "$(basename "$ACCOUNT")"
+  done
 }
 
 # Configuration
@@ -243,7 +309,13 @@ then
 	RESOURCES_URL="http://resources.download.minecraft.net"
 fi
 
+if [ "$AUTHENTICATION_SERVER_URL" == "" ]
+then
+	AUTHENTICATION_SERVER_URL="https://authserver.mojang.com"
+fi
+
 if [ "$XDG_CACHE_HOME" == "" ]
+
 then
 	XDG_CACHE_HOME="$HOME/.cache"
 fi
@@ -311,11 +383,22 @@ if [ "$1" == "user" ]
 then
 	if [ "$2" == "add" ]
 	then
-		add_user "$3"
-	else
-		printf "Usage: $0 user add/remove/list\n"
-		printf "user: manage the current user profiles.\n"
+		add_user && info "Authenticated successfully."
+		exit 0
 	fi
+
+	if [ "$2" == "list" ]
+	then
+		printf "%s\n" "Available accounts:"
+		list_accounts
+	fi
+
+	if [ "$2" == "" ]
+	then
+		printf "user: manage the current user profiles.\n"
+		printf "Usage: $0 user add/remove/list\n"
+	fi
+
 	exit 0
 fi
 
