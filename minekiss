@@ -2,13 +2,14 @@
 
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
-# TODO: Properly manage native libraries by extracting them (https://wiki.vg/Game_Files)
+# TODO: Make native library managing sturdier
 # TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
 # TODO: Properly parse all library and jvm rules
 # TODO: Add an offline mode
 # TODO: Add some more error handling
 # TODO: Properly manage legacy and pre-1.6 assets
 # TODO: Find a portable way of switching Java versions or at least find a way to configure them
+# TODO: Remove all platform-specific stuff, detect the current OS and set all rules properly.
 
 # Bruh
 export LC_ALL="C"
@@ -31,8 +32,13 @@ get_resource_url() {
 
 parse_libraries_from_metadata() {
 	# Format: [path] [sha1sum] [url]
+	# Apparently we can avoid the whole "exclude" rule as it seems to do pretty
+	# marginal stuff for now.
 	# Also how the fuck do I split this.
-	jq -r ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | .downloads.classifiers.\"natives-linux\" // empty, .downloads.artifact // empty | \"$MINEKISS_LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url"
+	jq -r ".libraries[]
+	| select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\")
+	| .downloads.classifiers.\"natives-linux\" // .downloads.artifact // empty
+	| \"$MINEKISS_LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url"
 }
 
 error() {
@@ -74,8 +80,9 @@ cleanup() {
 download() {
 	SELECTED_VERSION="$1"
 
-	VERSION_CLIENT_FILE="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
-	VERSION_METADATA_FILE="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
+	SELECTED_VERSION_DIR="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION"
+	VERSION_CLIENT_FILE="$SELECTED_VERSION_DIR/$SELECTED_VERSION.jar"
+	VERSION_METADATA_FILE="$SELECTED_VERSION_DIR/$SELECTED_VERSION.json"
 
 	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
 
@@ -190,7 +197,15 @@ download() {
 		mkdir -p "$(dirname "$LIBRARY_FILE")"
 
 		subinfo "Downloading \"$LIBRARY_FILE_NAME\"..."
+
 		curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
+
+		if printf "%s\n" "$(basename "$LIBRARY_FILE")" | grep -q "native"
+		then
+			mkdir -p "$SELECTED_VERSION_DIR/lib"
+			info "Extracting $LIBRARY_FILE..."
+			(cd "$SELECTED_VERSION_DIR/lib" || return; unzip -o "$LIBRARY_FILE")
+		fi
 	done
 }
 
@@ -244,8 +259,9 @@ start_version() {
 	# TODO: Read metadata from the instance to choose the right Java version.
 	# We need word splitting because the arguments are dynamically specified
 	# in the version manifest.
+	# TODO: Format the JVM's arguments.
 	# shellcheck disable=SC2086
-	"$JAVA" -cp "$CLASSPATH" $MAIN_CLASS $GAME_ARGUMENTS
+	"$JAVA" -Djava.library.path="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/lib" -cp "$CLASSPATH" $MAIN_CLASS $GAME_ARGUMENTS
 }
 
 # NOTE: This as of now just returns the only select profile (if any) as i'll
