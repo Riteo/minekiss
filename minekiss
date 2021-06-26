@@ -1,14 +1,14 @@
 #! /bin/sh
 
-# TOOD: Separate temp dirs based on PID or something else to avoid collisions
+# TODO: Properly manage missing accounts and invalid tokens
+# TODO: Separate temp dirs based on PID or something else to avoid collisions
 # TODO: Properly manage native libraries by extracting them (https://wiki.vg/Game_Files)
 # TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
 # TODO: Properly parse all library and jvm rules
-# TODO: Implement authentication and offline mode
+# TODO: Add an offline mode
 # TODO: Add some more error handling
 # TODO: Properly manage legacy and pre-1.6 assets
 # TODO: Find a portable way of switching Java versions or at least find a way to configure them
-# TODO: Refactor everything
 
 # Bruh
 export LC_ALL="C"
@@ -16,15 +16,17 @@ export LC_ALL="C"
 OLD_STTY="$(stty -g)"
 
 is_directory_empty() {
- ls -A $1 | grep -q .
+	# This implmentation avoids ls and passes shellcheck through globbing.
+	# I feel like it could be simpler though.
+	test "$(printf "%s" "$1"/*)" = "$1/*"
 }
 
 get_relative_resource_path() {
-	printf "$(printf "%s" "$1" | head -c 2)/$1"
+	printf "%s\n" "$(printf "%s" "$1" | head -c 2)/$1"
 }
 
 get_resource_url() {
-	printf "$MINEKISS_RESOURCES_URL/$(get_relative_resource_path "$1")"
+	printf "%s\n" "$MINEKISS_RESOURCES_URL/$(get_relative_resource_path "$1")"
 }
 
 parse_libraries_from_metadata() {
@@ -50,10 +52,19 @@ warning() {
 	printf -- '\033[33;1m!!\033[m %s\n' "$1"
 }
 
+prompt_hidden() {
+	# We don't want to write the password to the terminal.
+	stty -echo
+	printf '\033[32;1m<-\033[m %s' "$1"
+	read -r "$2"
+	stty echo
+	printf "\n"
+}
+
 cleanup() {
 	stty "$OLD_STTY"
 
-	if is_directory_empty "$MINEKISS_TEMP_DIR"
+	if ! is_directory_empty "$MINEKISS_TEMP_DIR"
 	then info "Cleaning up..."
 	fi
 
@@ -75,7 +86,7 @@ download() {
 	
 	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" < "$VERSION_MANIFEST_FILE")"
 
-	if [ "$VERSION_METADATA_URL" == "" ]
+	if [ "$VERSION_METADATA_URL" = "" ]
 	then
 		if [ -f "$VERSION_METADATA_FILE" ]
 		then
@@ -128,14 +139,14 @@ download() {
 	then
 		subinfo "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
 
-		mkdir -p "$(dirname $ASSET_INDEX_FILE)"
+		mkdir -p "$(dirname "$ASSET_INDEX_FILE")"
 		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
 	fi
 
 	# TODO: Add support for the older asset indexes.
 	info "Validating the game's assets..."
 
-	if [ "$ASSET_INDEX_ID" == "pre-1.6" ] || [ "$ASSET_INDEX_ID" == "legacy" ]
+	if [ "$ASSET_INDEX_ID" = "pre-1.6" ] || [ "$ASSET_INDEX_ID" = "legacy" ]
 	then
 		error "Legacy (pre 1.7.3) version detected! Download stopped as legacy asset managing is not supported yet."
 	fi
@@ -169,13 +180,17 @@ download() {
 	awk '{print $2 "  " $1}' < "$CONVERTED_LIBRARY_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_LIBS"
 
 	# TODO: Decompress properly the native libraries into a specialized directory.
+	# It's easier to keep that LIBRARY_SHA1 for parsing purposes.
+	# I prefer keeping the name for readibility though, that's why we have to
+	# disable this check.
+	# shellcheck disable=SC2034
 	grep -f "$FAILED_LIBS" < "$CONVERTED_LIBRARY_INDEX" | while read -r LIBRARY_FILE LIBRARY_SHA1 LIBRARY_URL
 	do
 		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
 		mkdir -p "$(dirname "$LIBRARY_FILE")"
 
 		subinfo "Downloading \"$LIBRARY_FILE_NAME\"..."
-			curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
+		curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
 	done
 }
 
@@ -195,8 +210,10 @@ start_version() {
 
 	# TODO: Find a way to manage stuff like resolution which is behind a rule.
 	# TODO: Format all arguments.
-	GAME_ARGUMENTS="$(echo $(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" < "$VERSION_METADATA_FILE" | tr "\n" " "))"
-	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${version_name}'"|$SELECTED_VERSION|" \
+	GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" < "$VERSION_METADATA_FILE" | tr "\n" " ")"
+
+	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
+	| sed "s|\${version_name}|$SELECTED_VERSION|" \
 	| sed "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
 	| sed "s|\${assets_index_name}|$ASSET_INDEX_ID|" \
 	| sed "s|\${version_type}|$(jq -r .type < "$VERSION_METADATA_FILE")|" \
@@ -219,13 +236,16 @@ start_version() {
 
 
 	# TODO: Find out if there's a better way to switch Java runtimes.
-	if [ "$JAVA" == "" ]
+	if [ "$JAVA" = "" ]
 	then
 		JAVA="java"
 	fi
 
 	# TODO: Read metadata from the instance to choose the right Java version.
-	"$JAVA" -cp "$CLASSPATH" "$MAIN_CLASS" $GAME_ARGUMENTS
+	# We need word splitting because the arguments are dynamically specified
+	# in the version manifest.
+	# shellcheck disable=SC2086
+	"$JAVA" -cp "$CLASSPATH" $MAIN_CLASS $GAME_ARGUMENTS
 }
 
 # NOTE: This as of now just returns the only select profile (if any) as i'll
@@ -265,8 +285,8 @@ write_account() {
 	mkdir -p "$ACCOUNT_DIR/profiles"
 	printf "%s\n" "$AUTH_TOKEN" > "$ACCOUNT_DIR/auth_token"
 	printf "%s\n" "$PROFILE_NAME" > "$ACCOUNT_DIR/profiles/$PROFILE_UUID"
-	printf "$PROFILE_UUID" > "$ACCOUNT_DIR/profiles/selected_uuid"
-	printf "$EMAIL_ADDRESS" > "$USERDATA_DIR/selected_account"
+	printf "%s\n" "$PROFILE_UUID" > "$ACCOUNT_DIR/profiles/selected_uuid"
+	printf "%s\n" "$EMAIL_ADDRESS" > "$USERDATA_DIR/selected_account"
 }
 
 is_token_valid() {
@@ -280,15 +300,10 @@ add_account() {
 
 	if [ -d "$ACCOUNT_DIR" ]
 	then
-		error "Account already added."
+		error "Account already existing."
 	fi
 
-	# We don't want to show the password on the terminal.
-	stty -echo
-	printf "Password: "
-	read -r PASSWORD
-	stty echo
-	printf "\n"
+	prompt_hidden "Password: " PASSWORD
 
 	authenticate_account "$EMAIL_ADDRESS" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
 	then
@@ -300,7 +315,7 @@ add_account() {
 }
 
 list_accounts() {
-  ls -1d "$USERDATA_DIR/accounts"/*/ 2>/dev/null | while read -r ACCOUNT
+  printf "%s\n" "$USERDATA_DIR/accounts"/*/ 2>/dev/null | while read -r ACCOUNT
   do
 	  info "$(basename "$ACCOUNT")"
   done
@@ -312,51 +327,51 @@ remove_account() {
 
 # Configuration
 
-if [ "$XDG_CACHE_HOME" == "" ]
+if [ "$XDG_CACHE_HOME" = "" ]
 then
 	XDG_CACHE_HOME="$HOME/.cache"
 fi
 
 CACHE_DIR="$XDG_CACHE_HOME/minekiss"
 
-if [ "$XDG_DATA_HOME" == "" ]
+if [ "$XDG_DATA_HOME" = "" ]
 then
 	XDG_DATA_HOME="$HOME/.local/share"
 fi
 
 USERDATA_DIR="$XDG_DATA_HOME/minekiss"
 
-if [ "$MINEKISS_MANIFEST_URL" == "" ]
+if [ "$MINEKISS_MANIFEST_URL" = "" ]
 then
 	MINEKISS_MANIFEST_URL="https://launchermeta.mojang.com/mc/game/version_manifest.json"
 fi
 
-if [ "$MINEKISS_RESOURCES_URL" == "" ]
+if [ "$MINEKISS_RESOURCES_URL" = "" ]
 then
 	MINEKISS_RESOURCES_URL="http://resources.download.minecraft.net"
 fi
 
-if [ "$MINEKISS_AUTH_SERVER_URL" == "" ]
+if [ "$MINEKISS_AUTH_SERVER_URL" = "" ]
 then
 	MINEKISS_AUTH_SERVER_URL="https://authserver.mojang.com"
 fi
 
-if [ "$MINEKISS_ASSETS_DIR" == "" ]
+if [ "$MINEKISS_ASSETS_DIR" = "" ]
 then
 	MINEKISS_ASSETS_DIR="$CACHE_DIR/assets"
 fi
 
-if [ "$MINEKISS_LIBRARIES_DIR" == "" ]
+if [ "$MINEKISS_LIBRARIES_DIR" = "" ]
 then
 	MINEKISS_LIBRARIES_DIR="$CACHE_DIR/libraries"
 fi
 
-if [ "$MINEKISS_VERSIONS_DIR" == "" ]
+if [ "$MINEKISS_VERSIONS_DIR" = "" ]
 then
 	MINEKISS_VERSIONS_DIR="$CACHE_DIR/versions"
 fi
 
-if [ "$MINEKISS_TEMP_DIR" == "" ]
+if [ "$MINEKISS_TEMP_DIR" = "" ]
 then
 	MINEKISS_TEMP_DIR="/tmp/minekiss"
 fi
@@ -367,7 +382,7 @@ mkdir -p "$USERDATA_DIR"
 trap exit INT
 trap cleanup EXIT
 
-if [ "$1" == "download" ]
+if [ "$1" = "download" ]
 then
 	if [ "$2" != "" ]
 	then
@@ -378,7 +393,7 @@ then
 	exit 0
 fi
 
-if [ "$1" == "start" ]
+if [ "$1" = "start" ]
 then
 	if [ "$2" != "" ]
 	then
@@ -389,9 +404,9 @@ then
 	exit 0
 fi
 
-if [ "$1" == "account" ]
+if [ "$1" = "account" ]
 then
-	if [ "$2" == "add" ]
+	if [ "$2" = "add" ]
 	then
 		if [ "$3" != "" ]
 		then
@@ -404,7 +419,7 @@ then
 		exit 0
 	fi
 
-	if [ "$2" == "list" ]
+	if [ "$2" = "list" ]
 	then
 		info "Available accounts:"
 		list_accounts
@@ -412,7 +427,7 @@ then
 		exit 0
 	fi
 
-	if [ "$2" == "remove" ]
+	if [ "$2" = "remove" ]
 	then
 		if [ "$3" != "" ]
 		then
@@ -424,7 +439,7 @@ then
 		exit 0
 	fi
 
-	if [ "$2" == "" ]
+	if [ "$2" = "" ]
 	then
 		info "$0 account [add|remove|list]"
 		info "add    Add a new Mojang account"
@@ -440,7 +455,7 @@ then
 	error "Unrecognized command."
 else
 	info "$0 [download|start|account]"
-	info "download Verify and download missing files for a Minecraft version into the cache directory."
+	info "download Verify and download the missing files of a Minecraft version into the cache directory."
 	info "start    Run a Minecraft version into the current drectory."
 	info "account  Manage the game's accounts"
 fi
