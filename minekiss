@@ -263,9 +263,7 @@ is_token_valid() {
 }
 
 add_user() {
-
-	printf "Email address (or if legacy, username): "
-	read -r EMAIL_ADDRESS
+	EMAIL_ADDRESS="$1"
 
 	ACCOUNT_DIR="$USERDATA_DIR/accounts/$EMAIL_ADDRESS"
 
@@ -387,7 +385,14 @@ if [ "$1" == "user" ]
 then
 	if [ "$2" == "add" ]
 	then
-		add_user && info "Authenticated successfully."
+		if [ "$3" != "" ]
+		then
+			add_user "$3" && info "Authenticated successfully."
+		else
+			printf "Usage: $0 user add email\n"
+			printf "NOTE: Legacy accounts require an username instead of an email.\n"
+		fi
+
 		exit 0
 	fi
 
