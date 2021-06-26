@@ -297,6 +297,10 @@ list_accounts() {
   done
 }
 
+remove_account() {
+	rm -r "$USERDATA_DIR/accounts/$1" 2>/tmp/null || error "Account not found."
+}
+
 # Configuration
 
 if [ "$VERSION_MANIFEST_URL" == "" ]
@@ -391,6 +395,13 @@ then
 	then
 		printf "%s\n" "Available accounts:"
 		list_accounts
+		exit 0
+	fi
+
+	if [ "$2" == "remove" ]
+	then
+		remove_account "$3" && info "Account removed successfully."
+		exit 0
 	fi
 
 	if [ "$2" == "" ]
