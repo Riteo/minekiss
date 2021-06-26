@@ -24,54 +24,54 @@ get_relative_resource_path() {
 }
 
 get_resource_url() {
-	printf "$RESOURCES_URL/$(get_relative_resource_path "$1")"
+	printf "$MINEKISS_RESOURCES_URL/$(get_relative_resource_path "$1")"
 }
 
 parse_libraries_from_metadata() {
 	# Format: [path] [sha1sum] [url]
 	# Also how the fuck do I split this.
-	jq -r ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | .downloads.classifiers.\"natives-linux\" // empty, .downloads.artifact // empty | \"$LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url"
+	jq -r ".libraries[] | select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\") | .downloads.classifiers.\"natives-linux\" // empty, .downloads.artifact // empty | \"$MINEKISS_LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url"
 }
 
 error() {
-	printf '\033[38;5;1mXX\033[m %s\n' "$1"
+	printf '\033[31;1mXX\033[m %s\n' "$1"
 	exit 1
 }
 
 info() {
-	printf -- '\033[38;5;2m->\033[m %s\n' "$1"
+	printf -- '\033[32;1m->\033[m %s\n' "$1"
 }
 
 subinfo() {
-	printf -- '\033[38;5;2m ->\033[m %s\n' "$1"
+	printf -- '\033[32;1m ->\033[m %s\n' "$1"
 }
 
 warning() {
-	printf -- '\033[38;5;3m!!\033[m %s\n' "$1"
+	printf -- '\033[33;1m!!\033[m %s\n' "$1"
 }
 
 cleanup() {
 	stty "$OLD_STTY"
 
-	if is_directory_empty "$TEMP_DIR"
+	if is_directory_empty "$MINEKISS_TEMP_DIR"
 	then info "Cleaning up..."
 	fi
 
-	rm -rf "$TEMP_DIR"
+	rm -rf "$MINEKISS_TEMP_DIR"
 }
 
 download() {
 	SELECTED_VERSION="$1"
 
-	VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
-	VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
+	VERSION_CLIENT_FILE="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
+	VERSION_METADATA_FILE="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
 
 	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
 
 	info "Fetching the latest version manifest..."
 
 	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
-	curl -s "$VERSION_MANIFEST_URL" > "$VERSION_MANIFEST_FILE" || error "Unable to fetch the latest manifest!"
+	curl -s "$MINEKISS_MANIFEST_URL" > "$VERSION_MANIFEST_FILE" || error "Unable to fetch the latest manifest!"
 	
 	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" < "$VERSION_MANIFEST_FILE")"
 
@@ -122,7 +122,7 @@ download() {
 	ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
 	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
 
-	ASSET_INDEX_FILE="$ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
+	ASSET_INDEX_FILE="$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
 
 	if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
@@ -140,14 +140,14 @@ download() {
 		error "Legacy (pre 1.7.3) version detected! Download stopped as legacy asset managing is not supported yet."
 	fi
 
-	CONVERTED_ASSET_INDEX="$TEMP_DIR/converted_asset_index"
-	FAILED_ASSETS="$TEMP_DIR/failed_assets"
+	CONVERTED_ASSET_INDEX="$MINEKISS_TEMP_DIR/converted_asset_index"
+	FAILED_ASSETS="$MINEKISS_TEMP_DIR/failed_assets"
 
 	# Le epic conversion: [le hash] [le actual path] [le game path]
 	# This allows us to use the shell's own word splitting as a blazingly fast line
 	# by line "parser" for our intermediate format. Maybe we could use FIFOs but I
 	# think that would just make things more complicated for nothing.
-	jq -r ".objects | to_entries[] | .value.hash + \" \" + \"$ASSETS_DIR/objects/\" + .value.hash[0:2] + \"/\" + .value.hash + \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+	jq -r ".objects | to_entries[] | .value.hash + \" \" + \"$MINEKISS_ASSETS_DIR/objects/\" + .value.hash[0:2] + \"/\" + .value.hash + \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
 
 	awk '{print $1 "  " $2}' < "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
 
@@ -161,8 +161,8 @@ download() {
 	# Libaries
 	info "Validating the game's libraries..."
 
-	CONVERTED_LIBRARY_INDEX="$TEMP_DIR/converted_library_index"
-	FAILED_LIBS="$TEMP_DIR/failed_libs"
+	CONVERTED_LIBRARY_INDEX="$MINEKISS_TEMP_DIR/converted_library_index"
+	FAILED_LIBS="$MINEKISS_TEMP_DIR/failed_libs"
 
 	parse_libraries_from_metadata < "$VERSION_METADATA_FILE" > "$CONVERTED_LIBRARY_INDEX"
 
@@ -182,8 +182,8 @@ download() {
 start_version() {
 	SELECTED_VERSION="$1"
 
-	VERSION_CLIENT_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
-	VERSION_METADATA_FILE="$VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
+	VERSION_CLIENT_FILE="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.jar"
+	VERSION_METADATA_FILE="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION/$SELECTED_VERSION.json"
 
 	download "$SELECTED_VERSION"
 
@@ -197,7 +197,7 @@ start_version() {
 	# TODO: Format all arguments.
 	GAME_ARGUMENTS="$(echo $(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" < "$VERSION_METADATA_FILE" | tr "\n" " "))"
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" | sed "s|"'${version_name}'"|$SELECTED_VERSION|" \
-	| sed "s|\${assets_root}|$ASSETS_DIR|" \
+	| sed "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
 	| sed "s|\${assets_index_name}|$ASSET_INDEX_ID|" \
 	| sed "s|\${version_type}|$(jq -r .type < "$VERSION_METADATA_FILE")|" \
 	| sed "s|\${game_directory}|$PWD|")"
@@ -233,7 +233,7 @@ start_version() {
 #       widespread. This will suffice for now.
 #
 # FORMAT: [ACCESS TOKEN] [PROFILE NAME] [PROFILE UUID]
-authenticate_user() {
+authenticate_account() {
 	curl -s --fail-with-body -H "Content-Type: application/json" -d \
 	"{
 		\"agent\": {
@@ -242,7 +242,7 @@ authenticate_user() {
 		},
 		\"username\": \"$1\",
 		\"password\": \"$2\"
-	}" "$AUTHENTICATION_SERVER_URL"/authenticate | jq -r \
+	}" "$MINEKISS_AUTH_SERVER_URL"/authenticate | jq -r \
 	"if has(\"accessToken\")
 	then
 		if (has(\"selectedProfile\"))
@@ -270,10 +270,10 @@ write_account() {
 }
 
 is_token_valid() {
-	curl -s -f -H "Content-Type: application/json" -d "{\"accessToken\":\"$1\"}" "$AUTHENTICATION_SERVER_URL"/validate
+	curl -s -f -H "Content-Type: application/json" -d "{\"accessToken\":\"$1\"}" "$MINEKISS_AUTH_SERVER_URL"/validate
 }
 
-add_user() {
+add_account() {
 	EMAIL_ADDRESS="$1"
 
 	ACCOUNT_DIR="$USERDATA_DIR/accounts/$EMAIL_ADDRESS"
@@ -290,7 +290,7 @@ add_user() {
 	stty echo
 	printf "\n"
 
-	authenticate_user "$EMAIL_ADDRESS" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
+	authenticate_account "$EMAIL_ADDRESS" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
 	then
 		write_account "$EMAIL_ADDRESS" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
 		return 0
@@ -302,7 +302,7 @@ add_user() {
 list_accounts() {
   ls -1d "$USERDATA_DIR/accounts"/*/ 2>/dev/null | while read -r ACCOUNT
   do
-	  printf "%s\n" "$(basename "$ACCOUNT")"
+	  info "$(basename "$ACCOUNT")"
   done
 }
 
@@ -312,23 +312,7 @@ remove_account() {
 
 # Configuration
 
-if [ "$VERSION_MANIFEST_URL" == "" ]
-then
-	VERSION_MANIFEST_URL="https://launchermeta.mojang.com/mc/game/version_manifest.json"
-fi
-
-if [ "$RESOURCE_URL" == "" ]
-then
-	RESOURCES_URL="http://resources.download.minecraft.net"
-fi
-
-if [ "$AUTHENTICATION_SERVER_URL" == "" ]
-then
-	AUTHENTICATION_SERVER_URL="https://authserver.mojang.com"
-fi
-
 if [ "$XDG_CACHE_HOME" == "" ]
-
 then
 	XDG_CACHE_HOME="$HOME/.cache"
 fi
@@ -342,27 +326,42 @@ fi
 
 USERDATA_DIR="$XDG_DATA_HOME/minekiss"
 
-if [ "$ASSETS_DIR" == "" ]
+if [ "$MINEKISS_MANIFEST_URL" == "" ]
 then
-	ASSETS_DIR="$CACHE_DIR/assets"
+	MINEKISS_MANIFEST_URL="https://launchermeta.mojang.com/mc/game/version_manifest.json"
 fi
 
-if [ "$LIBRARIES_DIR" == "" ]
+if [ "$MINEKISS_RESOURCES_URL" == "" ]
 then
-	LIBRARIES_DIR="$CACHE_DIR/libraries"
+	MINEKISS_RESOURCES_URL="http://resources.download.minecraft.net"
 fi
 
-if [ "$VERSIONS_DIR" == "" ]
+if [ "$MINEKISS_AUTH_SERVER_URL" == "" ]
 then
-	VERSIONS_DIR="$CACHE_DIR/versions"
+	MINEKISS_AUTH_SERVER_URL="https://authserver.mojang.com"
 fi
 
-if [ "$TEMP_DIR" == "" ]
+if [ "$MINEKISS_ASSETS_DIR" == "" ]
 then
-	TEMP_DIR="/tmp/minekiss"
+	MINEKISS_ASSETS_DIR="$CACHE_DIR/assets"
 fi
 
-mkdir -p "$TEMP_DIR"
+if [ "$MINEKISS_LIBRARIES_DIR" == "" ]
+then
+	MINEKISS_LIBRARIES_DIR="$CACHE_DIR/libraries"
+fi
+
+if [ "$MINEKISS_VERSIONS_DIR" == "" ]
+then
+	MINEKISS_VERSIONS_DIR="$CACHE_DIR/versions"
+fi
+
+if [ "$MINEKISS_TEMP_DIR" == "" ]
+then
+	MINEKISS_TEMP_DIR="/tmp/minekiss"
+fi
+
+mkdir -p "$MINEKISS_TEMP_DIR"
 mkdir -p "$USERDATA_DIR"
 
 trap exit INT
@@ -374,8 +373,7 @@ then
 	then
 		download "$2" && info "Download finished."
 	else
-		printf "Usage: $0 download ID\n"
-		printf "Downloads and verifies the specified mincraft version into minekiss' cache directory.\n"
+		info "$0 download VERSION"
 	fi
 	exit 0
 fi
@@ -386,22 +384,21 @@ then
 	then
 		start_version "$2"
 	else
-		printf "Usage: $0 start ID\n"
-		printf "start: Runs the specified minecraft version (if dowloaded) into the current drectory.\n"
+		info "$0 start VERSION"
 	fi
 	exit 0
 fi
 
-if [ "$1" == "user" ]
+if [ "$1" == "account" ]
 then
 	if [ "$2" == "add" ]
 	then
 		if [ "$3" != "" ]
 		then
-			add_user "$3" && info "Authenticated successfully."
+			add_account "$3" && info "Authenticated successfully."
 		else
-			printf "Usage: $0 user add email\n"
-			printf "NOTE: Legacy accounts require an username instead of an email.\n"
+			info "$0 account add EMAIL"
+			warning "NOTE: Legacy accounts require an username instead of an email."
 		fi
 
 		exit 0
@@ -409,21 +406,30 @@ then
 
 	if [ "$2" == "list" ]
 	then
-		printf "%s\n" "Available accounts:"
+		info "Available accounts:"
 		list_accounts
+
 		exit 0
 	fi
 
 	if [ "$2" == "remove" ]
 	then
-		remove_account "$3" && info "Account removed successfully."
+		if [ "$3" != "" ]
+		then
+			remove_account "$3" && info "Account removed successfully."
+		else
+			info "$0 account remove ACCOUNT"
+		fi
+
 		exit 0
 	fi
 
 	if [ "$2" == "" ]
 	then
-		printf "user: manage the current user profiles.\n"
-		printf "Usage: $0 user add/remove/list\n"
+		info "$0 account [add|remove|list]"
+		info "add    Add a new Mojang account"
+		info "remove Remove an account"
+		info "list   List all accounts"
 	fi
 
 	exit 0
@@ -431,12 +437,11 @@ fi
 
 if [ "$1" != "" ]
 then
-	printf "Unrecognized command: \"$1\"\n"
+	error "Unrecognized command."
 else
-	printf "minekiss - A simple minecraft launcher written entirely in POSIX shell.\n"
-	printf "Available commands:\n"
-	printf " - download: download and verify the specified minecraft version into minekiss' cache directory.\n"
-	printf " - start: run the specified minecraft version (if dowloaded) into the current drectory.\n"
-	printf " - user: manage the current user profiles.\n"
+	info "$0 [download|start|account]"
+	info "download Verify and download missing files for a Minecraft version into the cache directory."
+	info "start    Run a Minecraft version into the current drectory."
+	info "account  Manage the game's accounts"
 fi
 exit 0
