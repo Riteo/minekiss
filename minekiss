@@ -1,7 +1,7 @@
 #! /bin/sh
 
 # TODO: Properly manage missing accounts and invalid tokens
-# TODO: Separate temp dirs based on PID or something else to avoid collisions
+# TODO: Have an idea of what to do with multiple downloading instances
 # TODO: Properly manage native libraries by extracting them (https://wiki.vg/Game_Files)
 # TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
 # TODO: Properly parse all library and jvm rules
@@ -375,6 +375,9 @@ if [ "$MINEKISS_TEMP_DIR" = "" ]
 then
 	MINEKISS_TEMP_DIR="/tmp/minekiss"
 fi
+
+# Running multiple minekisses without exploding is nice.
+MINEKISS_TEMP_DIR="$MINEKISS_TEMP_DIR/$$"
 
 mkdir -p "$MINEKISS_TEMP_DIR"
 mkdir -p "$USERDATA_DIR"
