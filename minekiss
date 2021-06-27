@@ -34,7 +34,6 @@ parse_libraries_from_metadata() {
 	# Format: [path] [sha1sum] [url]
 	# Apparently we can avoid the whole "exclude" rule as it seems to do pretty
 	# marginal stuff for now.
-	# Also how the fuck do I split this.
 	jq -r ".libraries[]
 	| select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\")
 	| .downloads.classifiers.\"natives-linux\" // .downloads.artifact // empty
