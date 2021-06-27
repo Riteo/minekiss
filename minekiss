@@ -1,13 +1,13 @@
 #! /bin/sh
 
+# TODO: Fix native library extraction for already existing libraries
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
-# TODO: Make native library managing sturdier
 # TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
 # TODO: Properly parse all library and jvm rules
 # TODO: Add an offline mode
 # TODO: Add some more error handling
-# TODO: Properly manage legacy and pre-1.6 assets
+# TODO: Properly manage pre-1.6 assets
 # TODO: Find a portable way of switching Java versions or at least find a way to configure them
 # TODO: Remove all platform-specific stuff, detect the current OS and set all rules properly.
 
@@ -148,9 +148,9 @@ download() {
 	# TODO: Add support for the older asset indexes.
 	info "Validating the game's assets..."
 
-	if [ "$ASSET_INDEX_ID" = "pre-1.6" ] || [ "$ASSET_INDEX_ID" = "legacy" ]
+	if [ "$ASSET_INDEX_ID" = "pre-1.6" ]
 	then
-		error "Legacy (pre 1.7.3) version detected! Download stopped as legacy asset managing is not supported yet."
+		error "Pre 1.6 version detected! Download stopped as legacy asset managing is not supported yet."
 	fi
 
 	CONVERTED_ASSET_INDEX="$MINEKISS_TEMP_DIR/converted_asset_index"
@@ -160,7 +160,17 @@ download() {
 	# This allows us to use the shell's own word splitting as a blazingly fast line
 	# by line "parser" for our intermediate format. Maybe we could use FIFOs but I
 	# think that would just make things more complicated for nothing.
-	jq -r ".objects | to_entries[] | .value.hash + \" \" + \"$MINEKISS_ASSETS_DIR/objects/\" + .value.hash[0:2] + \"/\" + .value.hash + \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+	jq -r ".virtual as \$virtual
+	| .objects | to_entries[]
+	| .value.hash
+		+ \" \"
+		+ (if \$virtual | not
+			then
+			\"$MINEKISS_ASSETS_DIR/objects/\" + .value.hash[0:2]+ \"/\" + .value.hash
+			else
+			\"$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID\" + \"/\" + .key
+			end)
+		+ \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
 
 	awk '{print $1 "  " $2}' < "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
 
@@ -229,6 +239,13 @@ start_version() {
 	| sed "s|\${version_type}|$(jq -r .type < "$VERSION_METADATA_FILE")|" \
 	| sed "s|\${game_directory}|$MINEKISS_GAME_DIRECTORY|" \
 	| sed "s|\${user_properties}|{}|")"
+
+	# Virtual assets support
+	if jq -e .virtual "$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json" > /dev/null
+	then
+		GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
+		| sed "s|\${game_assets}|$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID|")"
+	fi
 
 	# Authentication
 	SELECTED_ACCOUNT_DIR="$USERDATA_DIR/accounts/$(cat "$USERDATA_DIR/selected_account")"
