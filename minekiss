@@ -204,7 +204,7 @@ download() {
 		then
 			mkdir -p "$SELECTED_VERSION_DIR/lib"
 			info "Extracting $LIBRARY_FILE..."
-			(cd "$SELECTED_VERSION_DIR/lib" || return; unzip -o "$LIBRARY_FILE")
+			(cd "$SELECTED_VERSION_DIR/lib" || return; unzip -q -o "$LIBRARY_FILE")
 		fi
 	done
 }
