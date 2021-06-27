@@ -50,10 +50,6 @@ info() {
 	printf -- '\033[32;1m->\033[m %s\n' "$1"
 }
 
-subinfo() {
-	printf -- '\033[32;1m ->\033[m %s\n' "$1"
-}
-
 warning() {
 	printf -- '\033[33;1m!!\033[m %s\n' "$1"
 }
@@ -113,7 +109,7 @@ download() {
 
 	if ! printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
-		subinfo "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
+		info "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
 		mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
 		curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
 	fi
@@ -127,7 +123,7 @@ download() {
 
 	if ! printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
-		subinfo "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
+		info "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
 		# We don't run mkdir here because the client will be downloaded in the same
 		# directory of the version metadata.
 		curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
@@ -144,7 +140,7 @@ download() {
 
 	if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
 	then
-		subinfo "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
+		info "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
 
 		mkdir -p "$(dirname "$ASSET_INDEX_FILE")"
 		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
@@ -171,7 +167,7 @@ download() {
 
 	grep -f "$FAILED_ASSETS" < "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH
 	do
-		subinfo "Downloading \"$ASSET_GAME_PATH\"..."
+		info "Downloading \"$ASSET_GAME_PATH\"..."
 		mkdir -p "$(dirname "$ASSET_FILE_PATH")"
 		curl -s "$(get_resource_url "$ASSET_SHA1")" > "$ASSET_FILE_PATH"
 	done
@@ -196,7 +192,7 @@ download() {
 		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
 		mkdir -p "$(dirname "$LIBRARY_FILE")"
 
-		subinfo "Downloading \"$LIBRARY_FILE_NAME\"..."
+		info "Downloading \"$LIBRARY_FILE_NAME\"..."
 
 		curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
 
