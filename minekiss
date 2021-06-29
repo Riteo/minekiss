@@ -72,6 +72,19 @@ cleanup() {
 	rm -rf "$MINEKISS_TEMP_DIR"
 }
 
+refresh_token() {
+	curl -s -H "Content-Type: application/json" -d \
+	"{
+		\"accessToken\": \"$1\",
+		\"clientToken\": \"$(cat "$USERDATA_DIR/client_id")\"
+	}" "$MINEKISS_AUTH_SERVER_URL/refresh" | jq -r "
+		if has(\"accessToken\")
+		then .accessToken
+		else \"\" | halt_error(1)
+		end"
+	return
+}
+
 download() {
 	SELECTED_VERSION="$1"
 
@@ -248,13 +261,26 @@ start_version() {
 	fi
 
 	# Authentication
-	SELECTED_ACCOUNT_DIR="$USERDATA_DIR/accounts/$(cat "$USERDATA_DIR/selected_account")"
+	SELECTED_ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+	SELECTED_ACCOUNT_DIR="$USERDATA_DIR/accounts/$SELECTED_ACCOUNT"
 	SELECTED_UUID="$(cat "$SELECTED_ACCOUNT_DIR/profiles/selected_uuid")"
 	SELECTED_USERNAME="$(cat "$SELECTED_ACCOUNT_DIR/profiles/$SELECTED_UUID")"
 	AUTH_TOKEN="$(cat "$SELECTED_ACCOUNT_DIR/auth_token")"
 
 	if ! is_token_valid "$AUTH_TOKEN"
-	then AUTH_TOKEN="$(refresh_token "$AUTH_TOKEN")"
+	then
+		REFRESH_RESULT="$(refresh_token "$AUTH_TOKEN")"
+		if [ "$?" != 0 ]
+		then
+			warning "Invalid auth token: access required."
+			prompt_hidden "Password: " PASSWORD
+			authenticate_account "$SELECTED_ACCOUNT" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
+			then
+				write_account "$SELECTED_ACCOUNT" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
+			else
+				error "Unable to authenticate."
+			fi
+		fi
 	fi
 
 	GAME_ARGUMENTS="$(printf "%s" "$GAME_ARGUMENTS" \
@@ -290,7 +316,8 @@ authenticate_account() {
 			\"version\": 1
 		},
 		\"username\": \"$1\",
-		\"password\": \"$2\"
+		\"password\": \"$2\",
+		\"client_token\": \"$(cat "$USERDATA_DIR/client_id")\"
 	}" "$MINEKISS_AUTH_SERVER_URL"/authenticate | jq -r \
 	"if has(\"accessToken\")
 	then
@@ -408,6 +435,10 @@ fi
 if [ "$MINEKISS_TEMP_DIR" = "" ]
 then
 	MINEKISS_TEMP_DIR="/tmp/minekiss"
+fi
+
+if [ ! -f "$USERDATA_DIR/client_id" ]
+then (umask 077; uuidgen > "$USERDATA_DIR/client_id")
 fi
 
 # Running multiple minekisses without exploding is nice.
