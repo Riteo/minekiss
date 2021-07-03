@@ -401,10 +401,8 @@ add_account() {
 	authenticate_account "$EMAIL_ADDRESS" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
 	then
 		write_account "$EMAIL_ADDRESS" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
-		return 0
-	else
-		return 1
 	fi
+		return
 }
 
 list_accounts() {
