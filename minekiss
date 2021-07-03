@@ -1,6 +1,5 @@
 #! /bin/sh
 
-# TODO: Fix native library extraction for already existing libraries
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
 # TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
@@ -204,7 +203,6 @@ download() {
 
 	awk '{print $2 "  " $1}' < "$CONVERTED_LIBRARY_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_LIBS"
 
-	# TODO: Decompress properly the native libraries into a specialized directory.
 	# It's easier to keep that LIBRARY_SHA1 for parsing purposes.
 	# I prefer keeping the name for readibility though, that's why we have to
 	# disable this check.
@@ -217,13 +215,51 @@ download() {
 		info "Downloading \"$LIBRARY_FILE_NAME\"..."
 
 		curl -s "$LIBRARY_URL" > "$LIBRARY_FILE"
+	done
 
-		if printf "%s\n" "$(basename "$LIBRARY_FILE")" | grep -q "native"
-		then
-			mkdir -p "$SELECTED_VERSION_DIR/lib"
-			info "Extracting $LIBRARY_FILE..."
-			(cd "$SELECTED_VERSION_DIR/lib" || return; unzip -q -o "$LIBRARY_FILE")
-		fi
+	info "Validating the version's native libraries..."
+
+	mkdir -p "$SELECTED_VERSION_DIR/lib"
+	cat "$CONVERTED_LIBRARY_INDEX" | grep "native" | while read -r LIBRARY_FILE LIBRARY_SHA1 LIBRARY_URL
+	do
+		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
+		LIBRARY_DIRECTORY="$(dirname "$LIBRARY_FILE")"
+
+		mkdir -p "$LIBRARY_DIRECTORY/native"
+
+		for NATIVE_LIBRARY_FILE_NAME in $(zipinfo -1 $LIBRARY_FILE -x 'META-INF/*' '*.git' '*.sha1' 2> /dev/null)
+		do
+			# We fetch the first matching element and work on that, otherwise any other
+			# similarly named file might get stuck there forever.
+			CHECKSUMMED_NATIVE_LIBRARY_FILE="$(printf "%s " $LIBRARY_DIRECTORY/native/$NATIVE_LIBRARY_FILE_NAME.* | cut -d " " -f 1)"
+			CHECKSUMMED_NATIVE_LIBRARY_FILE_NAME="$(basename "$CHECKSUMMED_NATIVE_LIBRARY_FILE")"
+
+			NATIVE_LIBRARY_FILE_SHA1="${CHECKSUMMED_NATIVE_LIBRARY_FILE_NAME##*.}"
+			NATIVE_LIBRARY_FILE_CURRENT_SHA1="$(sha1sum "$CHECKSUMMED_NATIVE_LIBRARY_FILE" | cut -d ' ' -f 1)"
+
+			NATIVE_LIBRARY_LINK="$SELECTED_VERSION_DIR/lib/$NATIVE_LIBRARY_FILE_NAME"
+
+			# We steer off a bit from the traditional native library management by
+			# storing each decompressed library into a folder with its checksum
+			# appended to its name. We then parse it to get its original checksum
+			# and compare it.
+			# Thanks to Dylan Araps for this great idea.
+			if [ "$NATIVE_LIBRARY_FILE_CURRENT_SHA1" != "$NATIVE_LIBRARY_FILE_SHA1" ]
+			then
+				rm -f "$CHECKSUMMED_NATIVE_LIBRARY_FILE"
+				info "Extracting \"$NATIVE_LIBRARY_FILE_NAME\"..."
+				(cd "$LIBRARY_DIRECTORY/native"
+				unzip -qqo "$LIBRARY_FILE" "$NATIVE_LIBRARY_FILE_NAME"
+				NATIVE_LIBRARY_FILE_SHA1="$(sha1sum "$NATIVE_LIBRARY_FILE_NAME" | cut -d ' ' -f 1)"
+				CHECKSUMMED_NATIVE_LIBRARY_FILE="$LIBRARY_DIRECTORY/native/$NATIVE_LIBRARY_FILE_NAME.$NATIVE_LIBRARY_FILE_SHA1"
+				mv "$NATIVE_LIBRARY_FILE_NAME" "$CHECKSUMMED_NATIVE_LIBRARY_FILE")
+			fi
+
+			if [ ! -f "$NATIVE_LIBRARY_LINK" ]
+			then
+				ln -sf "$CHECKSUMMED_NATIVE_LIBRARY_FILE" "$NATIVE_LIBRARY_LINK"
+			fi
+		done
 	done
 }
 
