@@ -52,18 +52,28 @@ warning() {
 	printf -- '\033[33;1m!!\033[m %s\n' "$1"
 }
 
+prompt() {
+	printf '\033[32;1m<-\033[m %s ' "$1"
+	read -r "$2"
+}
+
 prompt_hidden() {
 	# We don't want to write the password to the terminal.
 	stty -echo
-	printf '\033[32;1m<-\033[m %s' "$1"
+	printf '\033[32;1m<-\033[m %s ' "$1"
 	read -r "$2"
 	stty echo
 	printf "\n"
 }
 
-cleanup() {
+abort() {
 	stty "$OLD_STTY"
+	printf "\n"
 
+	error "Aborted."
+}
+
+cleanup() {
 	if ! is_directory_empty "$MINEKISS_TEMP_DIR"
 	then info "Cleaning up..."
 	fi
@@ -84,6 +94,9 @@ refresh_token() {
 	return
 }
 
+# TODO: Add a latest and latest-snapshot option.
+# TODO: Infer "latest" from an empty argument, add a version
+# preference/variable or simply throw an error.
 download() {
 	SELECTED_VERSION="$1"
 
@@ -284,19 +297,13 @@ start_version() {
 	SELECTED_USERNAME="$(cat "$SELECTED_ACCOUNT_DIR/profiles/$SELECTED_UUID")"
 	AUTH_TOKEN="$(cat "$SELECTED_ACCOUNT_DIR/auth_token")"
 
-	if ! is_token_valid "$AUTH_TOKEN"
+	if ! token_is_valid "$AUTH_TOKEN"
 	then
 		REFRESH_RESULT="$(refresh_token "$AUTH_TOKEN")"
 		if [ "$?" != 0 ]
 		then
 			warning "Invalid auth token: access required."
-			prompt_hidden "Password: " PASSWORD
-			authenticate_account "$SELECTED_ACCOUNT" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
-			then
-				write_account "$SELECTED_ACCOUNT" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
-			else
-				error "Unable to authenticate."
-			fi
+			account_login "$SELECTED_ACCOUNT"
 		fi
 	fi
 
@@ -354,7 +361,7 @@ authenticate_account() {
 		},
 		\"username\": \"$1\",
 		\"password\": \"$2\",
-		\"client_token\": \"$(cat "$USERDATA_DIR/client_id")\"
+		\"clientToken\": \"$(cat "$USERDATA_DIR/client_id")\"
 	}" "$MINEKISS_AUTH_SERVER_URL"/authenticate | jq -r \
 	"if has(\"accessToken\")
 	then
@@ -366,7 +373,7 @@ authenticate_account() {
 	end"
 }
 
-write_account() {
+account_write() {
 	EMAIL_ADDRESS="$1"
 	AUTH_TOKEN="$2"
 	PROFILE_NAME="$3"
@@ -382,38 +389,92 @@ write_account() {
 	printf "%s\n" "$EMAIL_ADDRESS" > "$USERDATA_DIR/selected_account"
 }
 
-is_token_valid() {
-	curl -s -f -H "Content-Type: application/json" -d "{\"accessToken\":\"$1\"}" "$MINEKISS_AUTH_SERVER_URL"/validate
+token_is_valid() {
+	curl -f -s -H "Content-Type: application/json" -d \
+	"{
+		\"accessToken\":\"$1\",
+		\"clientToken\":\"$(cat "$USERDATA_DIR/client_id")\"
+	}" "$MINEKISS_AUTH_SERVER_URL"/validate
 }
 
-add_account() {
-	EMAIL_ADDRESS="$1"
+token_invalidate() {
+	curl -s -f -H "Content-Type: application/json" -d \
+	"{
+		\"accessToken\": \"$1\",
+		\"clientToken\": \"$(cat "$USERDATA_DIR/client_id")\"
+	}" "$MINEKISS_AUTH_SERVER_URL/invalidate"
+}
 
-	ACCOUNT_DIR="$USERDATA_DIR/accounts/$EMAIL_ADDRESS"
-
-	if [ -d "$ACCOUNT_DIR" ]
+account_login() {
+	if [ ! "$1" ]
 	then
-		error "Account already existing."
+		ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+	else
+		ACCOUNT="$1"
 	fi
 
-	prompt_hidden "Password: " PASSWORD
-
-	authenticate_account "$EMAIL_ADDRESS" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
+	if [ "$ACCOUNT" == "" ]
 	then
-		write_account "$EMAIL_ADDRESS" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
+		prompt "Username:" ACCOUNT
+		printf "%s\n" $ACCOUNT > "$USERDATA_DIR/selected_account"
 	fi
-		return
+
+	PASSWORD="$2"
+
+	while true
+	do
+		prompt_hidden "Password for $ACCOUNT:" PASSWORD
+		authenticate_account "$ACCOUNT" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
+		then account_write "$ACCOUNT" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
+		else return 1 # We're inside a subshell due to the pipe
+		fi && break
+	done
+
+	info "Authenticated successfully."
 }
 
-list_accounts() {
-  printf "%s\n" "$USERDATA_DIR/accounts"/*/ 2>/dev/null | while read -r ACCOUNT
-  do
-	  info "$(basename "$ACCOUNT")"
-  done
+account_list() {
+	if ! is_directory_empty "$USERDATA_DIR/accounts/"
+	then
+		printf "%s\n" "$USERDATA_DIR/accounts/"*/ 2>/dev/null | while read -r ACCOUNT
+		do
+			info "$(basename "$ACCOUNT")"
+		done
+	fi
 }
 
-remove_account() {
-	rm -r "$USERDATA_DIR/accounts/$1" 2>/tmp/null || error "Account not found."
+account_logout() {
+	if [ "$1" ]
+	then
+		ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+	else
+		ACCOUNT="$1"
+	fi
+
+	ACCOUNT_PATH="$USERDATA_DIR/accounts/$ACCOUNT"
+
+	if [ ! -d "$ACCOUNT_PATH" ]
+		then error "Account not found."
+	fi
+
+	token_invalidate "$(cat "$ACCOUNT_PATH/auth_token")"
+	rm -rf "$ACCOUNT_PATH"
+}
+
+account_select() {
+	if [ "$1" ]
+	then
+		printf "%s\n" "$1" > "$USERDATA_DIR/selected_account"
+	else
+		SELECTED_ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+
+		if [ "$SELECTED_ACCOUNT" ]
+		then
+			info "Selected account: "$SELECTED_ACCOUNT""
+		else
+			info "No default account selected."
+		fi
+	fi
 }
 
 # Configuration
@@ -482,85 +543,31 @@ MINEKISS_TEMP_DIR="$MINEKISS_TEMP_DIR/$$"
 mkdir -p "$MINEKISS_TEMP_DIR"
 mkdir -p "$USERDATA_DIR"
 
-trap exit INT
+trap abort INT
 trap cleanup EXIT
 
-if [ "$1" = "download" ]
-then
-	if [ "$2" != "" ]
-	then
-		download "$2" && info "Download finished."
-	else
-		info "$0 download VERSION"
-	fi
-	exit 0
-fi
-
-if [ "$1" = "start" ]
-then
-	if [ "$2" != "" ]
-	then
-		start_version "$2"
-	else
-		info "$0 start VERSION"
-	fi
-
-	exit 0
-fi
-
-if [ "$1" = "account" ]
-then
-	if [ "$2" = "add" ]
-	then
-		if [ "$3" != "" ]
-		then
-			add_account "$3" && info "Authenticated successfully."
-		else
-			info "$0 account add EMAIL"
-			warning "NOTE: Legacy accounts require an username instead of an email."
-		fi
-
-		exit 0
-	fi
-
-	if [ "$2" = "list" ]
-	then
-		info "Available accounts:"
-		list_accounts
-
-		exit 0
-	fi
-
-	if [ "$2" = "remove" ]
-	then
-		if [ "$3" != "" ]
-		then
-			remove_account "$3" && info "Account removed successfully."
-		else
-			info "$0 account remove ACCOUNT"
-		fi
-
-		exit 0
-	fi
-
-	if [ "$2" = "" ]
-	then
-		info "$0 account [add|remove|list]"
-		info "add    Add a new Mojang account"
-		info "remove Remove an account"
-		info "list   List all accounts"
-	fi
-
-	exit 0
-fi
+case $1 in
+	download | d) download "$2" && exit ;;
+	start | s) start_version "$2" && exit ;;
+	authenticate | a) account_login "$2" && exit ;;
+	logout | l) account_logout "$2" && exit ;;
+	select | se) account_select "$2"  && exit ;;
+	accounts | ac) account_list && exit ;;
+esac
 
 if [ "$1" != "" ]
 then
 	error "Unrecognized command."
 else
-	info "$0 [download|start|account]"
-	info "download Verify and download the missing files of a Minecraft version into the cache directory."
-	info "start    Run a Minecraft version into the current drectory."
-	info "account  Manage the game's accounts"
+	EXECUTABLE_NAME="$(basename "$0")"
+	info "$EXECUTABLE_NAME [d|s] [version]"
+	info "download Verify and download a Minecraft version into the cache directory"
+	info "start    Start a Minecraft version into the current drectory"
+	info
+	info "$EXECUTABLE_NAME [a|l|se|ac] [account]"
+	info "authenticate Authenticate or refresh an account"
+	info "logout       Log out off an account"
+	info "select       Select an account as the default"
+	info "accounts     List all available accounts"
 fi
 exit 0
