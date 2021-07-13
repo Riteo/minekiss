@@ -57,16 +57,16 @@ get_library_index_from_metadata_file() {
 }
 
 error() {
-	printf '\033[31;1mXX\033[m %s\n' "$1" >&2
+	printf -- "$ERROR_FORMAT"  "$1" >&2
 	exit 1
 }
 
 info() {
-	printf -- '\033[32;1m->\033[m %s\n' "$1"
+	printf -- "$INFO_FORMAT" "$1"
 }
 
 warning() {
-	printf -- '\033[33;1m!!\033[m %s\n' "$1" >&2
+	printf -- "$WARNING_FORMAT" "$1" >&2
 }
 
 prompt() {
@@ -584,6 +584,25 @@ fi
 
 if [ ! -f "$USERDATA_DIR/client_id" ]
 then (umask 077; uuidgen > "$USERDATA_DIR/client_id")
+fi
+
+if [ -t 1 ]
+then
+	RED_COLOR="\033[31;1m"
+	GREEN_COLOR="\033[32;1m"
+	YELLOW_COLOR="\033[33;1m"
+	RESET_COLOR="\033[m"
+
+	if [ "$KISS_STYLE" != "" ]
+	then
+		ERROR_FORMAT="$YELLOW_COLOR"ERROR"$RESET_COLOR %s\n"
+		WARNING_FORMAT="$YELLOW_COLOR"WARNING"$RESET_COLOR %s\n"
+		INFO_FORMAT="$YELLOW_COLOR->$RESET_COLOR %s\n"
+	else
+		ERROR_FORMAT="$RED_COLOR"XX"$RESET_COLOR %s\n"
+		WARNING_FORMAT="$YELLOW_COLOR"!!"$RESET_COLOR %s\n"
+		INFO_FORMAT="$GREEN_COLOR->$RESET_COLOR %s\n"
+	fi
 fi
 
 # Running multiple minekisses without exploding is nice.
