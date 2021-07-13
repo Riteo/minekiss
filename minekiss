@@ -397,7 +397,7 @@ token_is_valid() {
 	"{
 		\"accessToken\":\"$1\",
 		\"clientToken\":\"$(cat "$USERDATA_DIR/client_id")\"
-	}" "$MINEKISS_AUTH_SERVER_URL"/validate
+	}" "$MINEKISS_AUTH_SERVER_URL/validate"
 }
 
 token_invalidate() {
