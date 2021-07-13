@@ -2,7 +2,6 @@
 
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
-# TODO: Implement maven syntax for libraries (needed for stuff like fabric and forge)
 # TODO: Properly parse all library and jvm rules
 # TODO: Add an offline mode
 # TODO: Add some more error handling
