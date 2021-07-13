@@ -74,11 +74,14 @@ abort() {
 }
 
 cleanup() {
-	if ! is_directory_empty "$MINEKISS_TEMP_DIR"
-	then info "Cleaning up..."
-	fi
+	if [ "$MINEKISS_DEBUG" == "" ]
+	then
+		if ! is_directory_empty "$MINEKISS_TEMP_DIR"
+		then info "Cleaning up..."
+		fi
 
-	rm -rf "$MINEKISS_TEMP_DIR"
+		rm -rf "$MINEKISS_TEMP_DIR"
+	fi
 }
 
 refresh_token() {
