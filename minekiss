@@ -29,14 +29,32 @@ get_resource_url() {
 	printf "%s\n" "$MINEKISS_RESOURCES_URL/$(get_relative_resource_path "$1")"
 }
 
-parse_libraries_from_metadata() {
+get_library_index_from_metadata_file() {
 	# Format: [path] [sha1sum] [url]
 	# Apparently we can avoid the whole "exclude" rule as it seems to do pretty
 	# marginal stuff for now.
 	jq -r ".libraries[]
 	| select((has(\"rules\") | not) or .rules[0].action == \"allow\" and .rules[0].os.name != \"osx\")
 	| .downloads.classifiers.\"natives-linux\" // .downloads.artifact // empty
-	| \"$MINEKISS_LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url"
+	| \"$MINEKISS_LIBRARIES_DIR/\" + .path + \" \" + .sha1 + \" \" + .url" "$1"
+
+	# Maven library support
+
+	jq -r '.libraries[] | select(has("name") and has("url")) | .name + " " + .url' $1 | while read PACKAGE REPO_URL
+	do
+		RELATIVE_LIBRARY_PATH="$(printf "%s" "$PACKAGE" | {
+			IFS=":" read NAMESPACE NAME VERSION
+			printf "%s\n" "$(printf "%s" "$NAMESPACE" | tr "." "/")/$NAME/$VERSION/$NAME-$VERSION.jar"
+		})"
+
+		LOCAL_LIBRARY_PATH="$MINEKISS_LIBRARIES_DIR/$RELATIVE_LIBRARY_PATH"
+		REMOTE_LIBRARY_PATH="$REPO_URL/$RELATIVE_LIBRARY_PATH"
+
+		# TODO: Multiple downloads to avoid multiple handshakes.
+		LIBRARY_SHA1="$(curl -s "$REMOTE_LIBRARY_PATH.sha1")"
+
+		printf "%s\n" "$LOCAL_LIBRARY_PATH $LIBRARY_SHA1 $REMOTE_LIBRARY_PATH"
+	done
 }
 
 error() {
@@ -109,105 +127,134 @@ download() {
 
 	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
 
+	VERSION_INHERITS="$(jq -r ".inheritsFrom // empty" "$VERSION_METADATA_FILE")"
+
+	# We clean this variable in case the function is being called from itself.
+	# We could be cleaner regarding variable setting in general though.
+	CUSTOM_VERSION=""
+
 	info "Fetching the latest version manifest..."
 
 	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
 	curl -s "$MINEKISS_MANIFEST_URL" > "$VERSION_MANIFEST_FILE" || error "Unable to fetch the latest manifest!"
 	
-	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" < "$VERSION_MANIFEST_FILE")"
+	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" "$VERSION_MANIFEST_FILE")"
 
 	if [ "$VERSION_METADATA_URL" = "" ]
 	then
 		if [ -f "$VERSION_METADATA_FILE" ]
 		then
-			warning "Custom version detected! Its files won't be validated."
-			return 0
+			warning "Custom version detected!"
+			CUSTOM_VERSION=1
+
+			if [ "$VERSION_INHERITS" != "" ]
+			then
+				info "Version inherits from $VERSION_INHERITS, downloading it first..."
+				(download "$VERSION_INHERITS" > /dev/null)
+				ln -sf "$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS/$VERSION_INHERITS.jar" "$SELECTED_VERSION_DIR/$SELECTED_VERSION.jar"
+			fi
 		else
 			error "Invalid version id!"
 		fi
 	fi
 
-	# Metadata
-	info "Validating the current version metadata..."
-
-	# The SHA1 is for some reason only encoded into the version metadata path.
-	# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
-	VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
-
-	if ! printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
+	# We merge the inherited json with its parent to avoid writing specific code.
+	#
+	# NOTE: This is a very basilar and primitive merge. Further tweakings or more
+	# sofisticated code may be needed,
+	if [ "$VERSION_INHERITS" != "" ]
 	then
-		info "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
-		mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
-		curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
+		jq --slurpfile parent "$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS/$VERSION_INHERITS.json" \
+		'$parent[0] * (setpath(["libraries"];$parent[0].libraries + .libraries)
+			| setpath(["arguments","game"];$parent[0].arguments.game + .arguments.game))' \
+		"$VERSION_METADATA_FILE" > "$MINEKISS_TEMP_DIR/mergedmanifest.json"
+		VERSION_METADATA_FILE="$MINEKISS_TEMP_DIR/mergedmanifest.json"
 	fi
 
-	# Client
-	VERSION_CLIENT_URL="$(jq -r ".downloads.client.url" < "$VERSION_METADATA_FILE")"
-
-	info "Validating the client jar..."
-
-	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
-
-	if ! printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
+	if [ "$CUSTOM_VERSION" == "" ]
 	then
-		info "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
-		# We don't run mkdir here because the client will be downloaded in the same
-		# directory of the version metadata.
-		curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
-	fi
+		# Metadata
+		info "Validating the current version metadata..."
 
-	# Asset index
-	info "Validating the game's asset index..."
+		# The SHA1 is for some reason only encoded into the version metadata path.
+		# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
+		VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
 
-	ASSET_INDEX_ID="$(jq -r ".assetIndex.id" < "$VERSION_METADATA_FILE")"
-	ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
-	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
+		if ! printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
+		then
+			info "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
+			mkdir -p "$(dirname "$VERSION_METADATA_FILE")"
+			curl -s "$VERSION_METADATA_URL" > "$VERSION_METADATA_FILE"
 
-	ASSET_INDEX_FILE="$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
+			# Client
+			VERSION_CLIENT_URL="$(jq -r ".downloads.client.url" < "$VERSION_METADATA_FILE")"
 
-	if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
-	then
-		info "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
+			info "Validating the client jar..."
 
-		mkdir -p "$(dirname "$ASSET_INDEX_FILE")"
-		curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
-	fi
+			VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1" < "$VERSION_METADATA_FILE")"
 
-	# TODO: Add support for the older asset indexes.
-	info "Validating the game's assets..."
-
-	if [ "$ASSET_INDEX_ID" = "pre-1.6" ]
-	then
-		error "Pre 1.6 version detected! Download stopped as legacy asset managing is not supported yet."
-	fi
-
-	CONVERTED_ASSET_INDEX="$MINEKISS_TEMP_DIR/converted_asset_index"
-	FAILED_ASSETS="$MINEKISS_TEMP_DIR/failed_assets"
-
-	# Le epic conversion: [le hash] [le actual path] [le game path]
-	# This allows us to use the shell's own word splitting as a blazingly fast line
-	# by line "parser" for our intermediate format. Maybe we could use FIFOs but I
-	# think that would just make things more complicated for nothing.
-	jq -r ".virtual as \$virtual
-	| .objects | to_entries[]
-	| .value.hash
-		+ \" \"
-		+ (if \$virtual | not
+			if ! printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
 			then
-			\"$MINEKISS_ASSETS_DIR/objects/\" + .value.hash[0:2]+ \"/\" + .value.hash
-			else
-			\"$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID\" + \"/\" + .key
-			end)
-		+ \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+				info "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
+				# We don't run mkdir here because the client will be downloaded in the same
+				# directory of the version metadata.
+				curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
+			fi
 
-	awk '{print $1 "  " $2}' < "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
+			# Asset index
+			info "Validating the game's asset index..."
 
-	grep -f "$FAILED_ASSETS" < "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH
-	do
-		info "Downloading \"$ASSET_GAME_PATH\"..."
-		mkdir -p "$(dirname "$ASSET_FILE_PATH")"
-		curl -s "$(get_resource_url "$ASSET_SHA1")" > "$ASSET_FILE_PATH"
-	done
+			ASSET_INDEX_ID="$(jq -r ".assetIndex.id" < "$VERSION_METADATA_FILE")"
+			ASSET_INDEX_URL="$(jq -r ".assetIndex.url" < "$VERSION_METADATA_FILE")"
+			ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1" < "$VERSION_METADATA_FILE")"
+
+			ASSET_INDEX_FILE="$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
+
+			if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
+			then
+				info "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
+
+				mkdir -p "$(dirname "$ASSET_INDEX_FILE")"
+				curl -s "$ASSET_INDEX_URL" > "$ASSET_INDEX_FILE"
+			fi
+
+			# TODO: Add support for the older asset indexes.
+			info "Validating the game's assets..."
+
+			if [ "$ASSET_INDEX_ID" = "pre-1.6" ]
+			then
+				error "Pre 1.6 version detected! Download stopped as legacy asset managing is not supported yet."
+			fi
+
+			CONVERTED_ASSET_INDEX="$MINEKISS_TEMP_DIR/converted_asset_index"
+			FAILED_ASSETS="$MINEKISS_TEMP_DIR/failed_assets"
+
+			# Le epic conversion: [le hash] [le actual path] [le game path]
+			# This allows us to use the shell's own word splitting as a blazingly fast line
+			# by line "parser" for our intermediate format. Maybe we could use FIFOs but I
+			# think that would just make things more complicated for nothing.
+			jq -r ".virtual as \$virtual
+			| .objects | to_entries[]
+			| .value.hash
+				+ \" \"
+				+ (if \$virtual | not
+					then
+					\"$MINEKISS_ASSETS_DIR/objects/\" + .value.hash[0:2]+ \"/\" + .value.hash
+					else
+					\"$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID\" + \"/\" + .key
+					end)
+				+ \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+
+			awk '{print $1 "  " $2}' < "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
+
+			grep -f "$FAILED_ASSETS" < "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH
+			do
+				info "Downloading \"$ASSET_GAME_PATH\"..."
+				mkdir -p "$(dirname "$ASSET_FILE_PATH")"
+				curl -s "$(get_resource_url "$ASSET_SHA1")" > "$ASSET_FILE_PATH"
+			done
+		fi
+	fi
 
 	# Libaries
 	info "Validating the game's libraries..."
@@ -215,7 +262,7 @@ download() {
 	CONVERTED_LIBRARY_INDEX="$MINEKISS_TEMP_DIR/converted_library_index"
 	FAILED_LIBS="$MINEKISS_TEMP_DIR/failed_libs"
 
-	parse_libraries_from_metadata < "$VERSION_METADATA_FILE" > "$CONVERTED_LIBRARY_INDEX"
+	get_library_index_from_metadata_file "$VERSION_METADATA_FILE" > "$CONVERTED_LIBRARY_INDEX"
 
 	awk '{print $2 "  " $1}' < "$CONVERTED_LIBRARY_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_LIBS"
 
@@ -287,7 +334,7 @@ start_version() {
 
 	download "$SELECTED_VERSION"
 
-	CLASSPATH="$(parse_libraries_from_metadata < "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
+	CLASSPATH="$(get_library_index_from_metadata_file "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
 	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
 
 	MAIN_CLASS="$(jq -r ".mainClass" < "$VERSION_METADATA_FILE")"
