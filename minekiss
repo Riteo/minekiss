@@ -40,7 +40,7 @@ parse_libraries_from_metadata() {
 }
 
 error() {
-	printf '\033[31;1mXX\033[m %s\n' "$1"
+	printf '\033[31;1mXX\033[m %s\n' "$1" >&2
 	exit 1
 }
 
@@ -49,7 +49,7 @@ info() {
 }
 
 warning() {
-	printf -- '\033[33;1m!!\033[m %s\n' "$1"
+	printf -- '\033[33;1m!!\033[m %s\n' "$1" >&2
 }
 
 prompt() {
