@@ -530,59 +530,20 @@ account_select() {
 
 # Configuration
 
-if [ "$XDG_CACHE_HOME" = "" ]
-then
-	XDG_CACHE_HOME="$HOME/.cache"
-fi
-
-CACHE_DIR="$XDG_CACHE_HOME/minekiss"
-
-if [ "$XDG_DATA_HOME" = "" ]
-then
-	XDG_DATA_HOME="$HOME/.local/share"
-fi
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+XDG_DATA_HOME="${XDG_DATA_HOME:-HOME/.local/share}"
 
 USERDATA_DIR="$XDG_DATA_HOME/minekiss"
+CACHE_DIR="$XDG_CACHE_HOME/minekiss"
 
-if [ "$MINEKISS_MANIFEST_URL" = "" ]
-then
-	MINEKISS_MANIFEST_URL="https://launchermeta.mojang.com/mc/game/version_manifest.json"
-fi
-
-if [ "$MINEKISS_RESOURCES_URL" = "" ]
-then
-	MINEKISS_RESOURCES_URL="http://resources.download.minecraft.net"
-fi
-
-if [ "$MINEKISS_AUTH_SERVER_URL" = "" ]
-then
-	MINEKISS_AUTH_SERVER_URL="https://authserver.mojang.com"
-fi
-
-if [ "$MINEKISS_ASSETS_DIR" = "" ]
-then
-	MINEKISS_ASSETS_DIR="$CACHE_DIR/assets"
-fi
-
-if [ "$MINEKISS_LIBRARIES_DIR" = "" ]
-then
-	MINEKISS_LIBRARIES_DIR="$CACHE_DIR/libraries"
-fi
-
-if [ "$MINEKISS_VERSIONS_DIR" = "" ]
-then
-	MINEKISS_VERSIONS_DIR="$CACHE_DIR/versions"
-fi
-
-if [ "$MINEKISS_GAME_DIRECTORY" = "" ]
-then
-	MINEKISS_GAME_DIRECTORY="."
-fi
-
-if [ "$MINEKISS_TEMP_DIR" = "" ]
-then
-	MINEKISS_TEMP_DIR="/tmp/minekiss"
-fi
+MINEKISS_MANIFEST_URL="${MINEKISS_MANIFEST_URL:-"https://launchermeta.mojang.com/mc/game/version_manifest.json"}"
+MINEKISS_RESOURCES_URL="${MINEKISS_RESOURCES_URL:-"http://resources.download.minecraft.net"}"
+MINEKISS_AUTH_SERVER_URL="${MINEKISS_AUTH_SERVER_URL:-"https://authserver.mojang.com"}"
+MINEKISS_ASSETS_DIR="${MINEKISS_ASSETS_DIR:-"$CACHE_DIR/assets"}"
+MINEKISS_LIBRARIES_DIR="${MINEKISS_LIBRARIES_DIR:-"$CACHE_DIR/libraries"}"
+MINEKISS_VERSIONS_DIR="${MINEKISS_VERSIONS_DIR:-"$CACHE_DIR/versions"}"
+MINEKISS_GAME_DIRECTORY="${MINEKISS_GAME_DIRECTORY:-"."}"
+MINEKISS_TEMP_DIR="${MINEKISS_TEMP_DIR:-"/tmp/minekiss"}/$$"
 
 if [ ! -f "$USERDATA_DIR/client_id" ]
 then (umask 077; uuidgen > "$USERDATA_DIR/client_id")
