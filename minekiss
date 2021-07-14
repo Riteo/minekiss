@@ -70,7 +70,7 @@ warning() {
 }
 
 prompt() {
-	printf '\033[32;1m<-\033[m %s ' "$1"
+	printf "$PROMPT_FORMAT" "$1"
 	read -r "$2"
 }
 
@@ -598,10 +598,12 @@ then
 		ERROR_FORMAT="$YELLOW_COLOR"ERROR"$RESET_COLOR %s\n"
 		WARNING_FORMAT="$YELLOW_COLOR"WARNING"$RESET_COLOR %s\n"
 		INFO_FORMAT="$YELLOW_COLOR->$RESET_COLOR %s\n"
+		PROMPT_FORMAT="%s "
 	else
 		ERROR_FORMAT="$RED_COLOR"XX"$RESET_COLOR %s\n"
 		WARNING_FORMAT="$YELLOW_COLOR"!!"$RESET_COLOR %s\n"
 		INFO_FORMAT="$GREEN_COLOR->$RESET_COLOR %s\n"
+		PROMPT_FORMAT="$GREEN_COLOR<-$RESET_COLOR %s\n"
 	fi
 fi
 
