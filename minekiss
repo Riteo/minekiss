@@ -114,19 +114,10 @@ refresh_token() {
 	return
 }
 
-# TODO: Add a latest and latest-snapshot option.
-# TODO: Infer "latest" from an empty argument, add a version
-# preference/variable or simply throw an error.
 download() {
-	SELECTED_VERSION="$1"
-
-	SELECTED_VERSION_DIR="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION"
-	VERSION_CLIENT_FILE="$SELECTED_VERSION_DIR/$SELECTED_VERSION.jar"
-	VERSION_METADATA_FILE="$SELECTED_VERSION_DIR/$SELECTED_VERSION.json"
+	SELECTED_VERSION=${1:-latest}
 
 	VERSION_MANIFEST_FILE="$CACHE_DIR/version_manifest.json"
-
-	VERSION_INHERITS="$(jq -r ".inheritsFrom // empty" "$VERSION_METADATA_FILE")"
 
 	# We clean this variable in case the function is being called from itself.
 	# We could be cleaner regarding variable setting in general though.
@@ -136,7 +127,16 @@ download() {
 
 	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
 	curl -s "$MINEKISS_MANIFEST_URL" > "$VERSION_MANIFEST_FILE" || error "Unable to fetch the latest manifest!"
-	
+
+	case "$SELECTED_VERSION" in
+		latest) SELECTED_VERSION="$(jq -r '.latest.release' < "$VERSION_MANIFEST_FILE")" ;;
+		latest-snapshot) SELECTED_VERSION="$(jq -r '.latest.snapshot' < "$VERSION_MANIFEST_FILE")";;
+	esac
+
+	SELECTED_VERSION_DIR="$MINEKISS_VERSIONS_DIR/$SELECTED_VERSION"
+	VERSION_CLIENT_FILE="$SELECTED_VERSION_DIR/$SELECTED_VERSION.jar"
+	VERSION_METADATA_FILE="$SELECTED_VERSION_DIR/$SELECTED_VERSION.json"
+
 	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$SELECTED_VERSION\").url" "$VERSION_MANIFEST_FILE")"
 
 	if [ "$VERSION_METADATA_URL" = "" ]
@@ -156,6 +156,8 @@ download() {
 			error "Invalid version id!"
 		fi
 	fi
+
+	VERSION_INHERITS="$(jq -r ".inheritsFrom // empty" "$VERSION_METADATA_FILE")"
 
 	# We merge the inherited json with its parent to avoid writing specific code.
 	#
