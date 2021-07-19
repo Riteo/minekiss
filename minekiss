@@ -1,6 +1,7 @@
 #! /bin/sh
 
 # TODO: Validating -> Checking?
+# TODO: Re-add Fabric support
 # TODO: More settings (eg. minekiss root, prompts etc)
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
