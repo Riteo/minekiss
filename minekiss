@@ -395,7 +395,7 @@ download() {
 			CONVERTED_ASSET_INDEX="$MINEKISS_TEMP_DIR/converted_asset_index"
 			FAILED_ASSETS="$MINEKISS_TEMP_DIR/failed_assets"
 
-			# Le epic conversion: [le hash] [le actual path] [le game path]
+			# Le epic conversion: [le hash] [le actual path] [le game path] [le asset url]
 			# This allows us to use the shell's own word splitting as a blazingly fast line
 			# by line "parser" for our intermediate format. Maybe we could use FIFOs but I
 			# think that would just make things more complicated for nothing.
@@ -409,28 +409,37 @@ download() {
 					else
 					\"$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID\" + \"/\" + .key
 					end)
-				+ \" \" + .key" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+				+ \" \"	+ .key + \" \"
+				+ \"$MINEKISS_RESOURCES_URL/\" + .value.hash[0:2] + \"/\" + .value.hash" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
 
 			awk '{print $1 "  " $2}' "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
 
-			# We set MINEKISS_INTEGRITY only once if there are any broken assets.
-			if [ "$MINEKISS_OFFLINE" != "" ] && grep . "$FAILED_ASSETS"
+			if [ "$MINEKISS_OFFLINE" != "" ]
 			then
-				MINEKISS_INTEGRITY=0
+				grep -f "$FAILED_ASSETS" "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH ASSET_URL
+				do
+					warning "Integrity check for \"$$ASSET_GAME_PATH\" failed! Unable to download it due to missing internet connection."
+				done
 			fi
 
-			grep -f "$FAILED_ASSETS" "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH
-			do
+			# We set MINEKISS_INTEGRITY only once if there are any broken assets.
+			if  grep -q . "$FAILED_ASSETS"
+			then
 				if [ "$MINEKISS_OFFLINE" != "" ]
 				then
-					warning "Integrity check for \"$$ASSET_GAME_PATH\" failed! Unable to download it due to missing internet connection."
-					# We already set MINEKISS_INTEGRITY above.
-					continue
+					MINEKISS_INTEGRITY=0
 				fi
 
-				info "Downloading \"$ASSET_GAME_PATH\"..."
-				curl -s "$(get_resource_url "$ASSET_SHA1")" --create-dirs -o "$ASSET_FILE_PATH"
-			done
+				UNIQUE_ASSET_INDEX="$MINEKISS_TEMP_DIR/unique_asset_index"
+				# Apparently the asset index might contain some duplicates, so we remove them here.
+				awk '!seen[$1]++' "$CONVERTED_ASSET_INDEX" > "$UNIQUE_ASSET_INDEX"
+
+				grep -f "$FAILED_ASSETS" "$UNIQUE_ASSET_INDEX" \
+				| awk '{print "url " $4 "\n" "output " $2 "\n"}' | curl --create-dirs -K - -s -w "%{url}\n" | while read url
+				do
+					info "Downloaded \"$(grep -F "$url" "$UNIQUE_ASSET_INDEX" | awk '{print $3}')\"."
+				done
+			fi
 		fi
 	else
 		warning "Unable to validate \"$VERSION\"'s assets!"
