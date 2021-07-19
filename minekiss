@@ -616,7 +616,7 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 USERDATA_DIR="$XDG_DATA_HOME/minekiss"
 
 MINEKISS_MANIFEST_URL="${MINEKISS_MANIFEST_URL:-"https://launchermeta.mojang.com/mc/game/version_manifest.json"}"
-MINEKISS_RESOURCES_URL="${MINEKISS_RESOURCES_URL:-"http://resources.download.minecraft.net"}"
+MINEKISS_RESOURCES_URL="${MINEKISS_RESOURCES_URL:-"https://resources.download.minecraft.net"}"
 MINEKISS_AUTH_SERVER_URL="${MINEKISS_AUTH_SERVER_URL:-"https://authserver.mojang.com"}"
 MINEKISS_ASSETS_DIR="${MINEKISS_ASSETS_DIR:-"$USERDATA_DIR/assets"}"
 MINEKISS_LIBRARIES_DIR="${MINEKISS_LIBRARIES_DIR:-"$USERDATA_DIR/libraries"}"
