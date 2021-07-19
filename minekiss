@@ -339,7 +339,7 @@ download() {
 
 	if [ "$VERSION_INHERITS" != "" ]
 	then
-		info "Validating parent version \"$VERSION_INHERITS\"..."
+		info "Validating parent version $VERSION_INHERITS..."
 		download "$VERSION_INHERITS"
 		ln -sf "$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS/$VERSION_INHERITS.jar" "$VERSION_DIR/$VERSION.jar"
 	fi
@@ -442,7 +442,7 @@ download() {
 			fi
 		fi
 	else
-		warning "Unable to validate \"$VERSION\"'s assets!"
+		warning "Unable to validate $VERSION's assets!"
 	fi
 
 	# Libraries
