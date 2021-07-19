@@ -626,8 +626,16 @@ MINEKISS_TEMP_DIR="${MINEKISS_TEMP_DIR:-"/tmp/minekiss"}/$$"
 
 VERSION_MANIFEST_FILE="$USERDATA_DIR/version_manifest.json"
 
+mkdir -p "$MINEKISS_TEMP_DIR"
+mkdir -p "$USERDATA_DIR"
+
 if [ ! -f "$USERDATA_DIR/client_id" ]
 then (umask 077; uuidgen > "$USERDATA_DIR/client_id")
+fi
+
+if [ ! -f "$USERDATA_DIR/selected_account" ]
+then
+	touch "$USERDATA_DIR/selected_account"
 fi
 
 if [ -t 1 ]
@@ -650,9 +658,6 @@ else
 	INFO_FORMAT="$GREEN_COLOR->$RESET_COLOR"' %s\n'
 	PROMPT_FORMAT="$GREEN_COLOR<-$RESET_COLOR"' %s '
 fi
-
-mkdir -p "$MINEKISS_TEMP_DIR"
-mkdir -p "$USERDATA_DIR"
 
 trap abort INT
 trap cleanup EXIT
