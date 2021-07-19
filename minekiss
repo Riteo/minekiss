@@ -5,7 +5,6 @@
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
 # TODO: Properly parse all library and jvm rules
-# TODO: Add an offline mode
 # TODO: Add some more error handling
 # TODO: Properly manage pre-1.6 assets
 # TODO: Find a portable way of switching Java versions or at least find a way to configure them
