@@ -82,7 +82,7 @@ prompt_hidden() {
 is_directory_empty() {
 	# This implmentation avoids ls and passes shellcheck through globbing.
 	set -- "$1"/*
-	test "$*" = "$1/*"
+	test "$*" = "$DIRECTORY_PATH/*"
 }
 
 get_relative_resource_path() {
