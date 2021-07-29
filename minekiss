@@ -81,8 +81,9 @@ prompt_hidden() {
 
 is_directory_empty() {
 	# This implmentation avoids ls and passes shellcheck through globbing.
-	# I feel like it could be simpler though.
-	test "$(printf "%s" "$1"/*)" = "$1/*"
+	DIRECTORY_PATH="$1"
+	set -- "$1"/*
+	test "$*" = "$DIRECTORY_PATH/*"
 }
 
 get_relative_resource_path() {
