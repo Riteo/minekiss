@@ -81,6 +81,7 @@ prompt_hidden() {
 
 is_directory_empty() {
 	# This implmentation avoids ls and passes shellcheck through globbing.
+	DIRECTORY_PATH="$1"
 	set -- "$1"/*
 	test "$*" = "$DIRECTORY_PATH/*"
 }
