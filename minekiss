@@ -278,11 +278,11 @@ parse_version_id() {
 
 parse_version_metadata() {
 	VERSION_INHERITS="$(jq -r ".inheritsFrom // empty" "$1")"
-	VERSION_CLIENT_URL="$(jq -r ".downloads.client.url // empty" < "$1")"
-	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1 // empty" < "$1")"
-	ASSET_INDEX_ID="$(jq -r ".assetIndex.id // empty" < "$1")"
-	ASSET_INDEX_URL="$(jq -r ".assetIndex.url // empty" < "$1")"
-	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1 // empty" < "$1")"
+	VERSION_CLIENT_URL="$(jq -r ".downloads.client.url // empty" "$1")"
+	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1 // empty" "$1")"
+	ASSET_INDEX_ID="$(jq -r ".assetIndex.id // empty" "$1")"
+	ASSET_INDEX_URL="$(jq -r ".assetIndex.url // empty" "$1")"
+	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1 // empty" "$1")"
 	ASSET_INDEX_FILE="$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
 }
 
@@ -412,7 +412,7 @@ download() {
 					\"$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID\" + \"/\" + .key
 					end)
 				+ \" \"	+ .key + \" \"
-				+ \"$MINEKISS_RESOURCES_URL/\" + .value.hash[0:2] + \"/\" + .value.hash" < "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+				+ \"$MINEKISS_RESOURCES_URL/\" + .value.hash[0:2] + \"/\" + .value.hash" "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
 
 			awk '{print $1 "  " $2}' "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
 
@@ -577,17 +577,17 @@ start_version() {
 	CLASSPATH="$(get_library_index_from_metadata_file "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
 	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
 
-	VERSION_MAIN_CLASS="$(jq -r ".mainClass" < "$VERSION_METADATA_FILE")"
+	VERSION_MAIN_CLASS="$(jq -r ".mainClass" "$VERSION_METADATA_FILE")"
 
 	# TODO: Find a way to manage stuff like resolution which is behind a rule.
 	# TODO: Format all arguments.
-	GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" < "$VERSION_METADATA_FILE" | tr "\n" " ")"
+	GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" "$VERSION_METADATA_FILE" | tr "\n" " ")"
 
 	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
 	| sed "s|\${version_name}|$VERSION|" \
 	| sed "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
 	| sed "s|\${assets_index_name}|$ASSET_INDEX_ID|" \
-	| sed "s|\${version_type}|$(jq -r .type < "$VERSION_METADATA_FILE")|" \
+	| sed "s|\${version_type}|$(jq -r .type "$VERSION_METADATA_FILE")|" \
 	| sed "s|\${game_directory}|$MINEKISS_GAME_DIRECTORY|" \
 	| sed "s|\${user_properties}|{}|" \
 	| sed "s|\${auth_uuid}|$SELECTED_UUID|" \
