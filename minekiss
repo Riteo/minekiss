@@ -1,5 +1,6 @@
 #! /bin/sh
 
+# TODO: Make a version inherit everything from its parent when appropiate
 # TODO: Validating -> Checking?
 # TODO: Re-add Fabric support
 # TODO: More settings (eg. minekiss root, prompts etc)
@@ -276,14 +277,26 @@ parse_version_id() {
 	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$VERSION\").url" "$VERSION_MANIFEST_FILE")"
 }
 
-parse_version_metadata() {
-	VERSION_INHERITS="$(jq -r ".inheritsFrom // empty" "$1")"
-	VERSION_CLIENT_URL="$(jq -r ".downloads.client.url // empty" "$1")"
-	VERSION_CLIENT_SHA1="$(jq -r ".downloads.client.sha1 // empty" "$1")"
-	ASSET_INDEX_ID="$(jq -r ".assetIndex.id // empty" "$1")"
-	ASSET_INDEX_URL="$(jq -r ".assetIndex.url // empty" "$1")"
-	ASSET_INDEX_SHA1="$(jq -r ".assetIndex.sha1 // empty" "$1")"
-	ASSET_INDEX_FILE="$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json"
+convert_version_metadata() {
+	# This could surely be optimized into one single call and parsed with simpler
+	# tools but it'll do for now.
+	VERSION_ID="$(jq -r ".id // empty" "$1")"
+	CONVERTED_VERSION_PATH="$MINEKISS_TEMP_DIR/converted_versions/$VERSION_ID"
+
+	if is_directory_empty "$CONVERTED_VERSION_PATH"
+	then
+		mkdir -p "$CONVERTED_VERSION_PATH"
+
+		jq -r ".inheritsFrom // empty" "$1" > "$CONVERTED_VERSION_PATH/inherits_from"
+		jq -r ".downloads.client.url // empty" "$1" > "$CONVERTED_VERSION_PATH/client_url"
+		jq -r ".downloads.client.sha1 // empty" "$1" > "$CONVERTED_VERSION_PATH/client_sha1"
+		jq -r ".assetIndex.id // empty" "$1" > "$CONVERTED_VERSION_PATH/assetindex_id"
+		jq -r ".assetIndex.url // empty" "$1" > "$CONVERTED_VERSION_PATH/assetindex_url"
+		jq -r ".assetIndex.sha1 // empty" "$1" > "$CONVERTED_VERSION_PATH/assetindex_sha1"
+		printf "%s\n" "$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json" > "$CONVERTED_VERSION_PATH/assetindex_path"
+	fi
+
+	printf "%s\n" "$CONVERTED_VERSION_PATH"
 }
 
 download() {
@@ -337,13 +350,30 @@ download() {
 		error "Version not found!"
 	fi
 
-	parse_version_metadata "$VERSION_METADATA_FILE"
+	CONVERTED_METADATA_PATH="$(convert_version_metadata "$VERSION_METADATA_FILE")"
+	VERSION_INHERITS="$(cat "$CONVERTED_METADATA_PATH/inherits_from")"
+	VERSION_CLIENT_URL="$(cat "$CONVERTED_METADATA_PATH/client_url")"
+	VERSION_CLIENT_SHA1="$(cat "$CONVERTED_METADATA_PATH/client_sha1")"
+	ASSET_INDEX_ID="$(cat "$CONVERTED_METADATA_PATH/assetindex_id")"
+	ASSET_INDEX_URL="$(cat "$CONVERTED_METADATA_PATH/assetindex_url")"
+	ASSET_INDEX_SHA1="$(cat "$CONVERTED_METADATA_PATH/assetindex_sha1")"
+	ASSET_INDEX_FILE="$(cat "$CONVERTED_METADATA_PATH/assetindex_path")"
 
 	if [ "$VERSION_INHERITS" != "" ]
 	then
 		info "Validating parent version $VERSION_INHERITS..."
 		(download "$VERSION_INHERITS")
-		ln -sf "$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS/$VERSION_INHERITS.jar" "$VERSION_DIR/$VERSION.jar"
+
+		# Downloading will alredy have converted its metadata
+		CONVERTED_INHERITED_VERSION_METADATA_PATH="$MINEKISS_TEMP_DIR/converted_versions/$VERSION_INHERITS"
+
+		INHERITED_VERSION_PATH="$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS"
+		INHERITED_VERSION_INHERITS="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/inherits_from")"
+		INHERITED_VERSION_ASSET_INDEX_ID="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/assetindex_id")"
+
+		mkdir -p "$VERSION_DIR/lib"
+		ln -sf "$INHERITED_VERSION_PATH/$VERSION_INHERITS.jar" "$VERSION_DIR/$VERSION.jar"
+		ln -sf "$INHERITED_VERSION_PATH"/lib/* "$VERSION_DIR/lib"
 	fi
 
 	if [ "$VERSION_CLIENT_URL" != "" ] && [ "$VERSION_CLIENT_SHA1" != "" ]
@@ -582,6 +612,14 @@ start_version() {
 	# TODO: Find a way to manage stuff like resolution which is behind a rule.
 	# TODO: Format all arguments.
 	GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" "$VERSION_METADATA_FILE" | tr "\n" " ")"
+
+	if [ "$VERSION_INHERITS" != "" ]
+	then
+		CLASSPATH="$CLASSPATH:$(get_library_index_from_metadata_file "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json" | awk '{print $1}' | tr "\n" ":")"
+		ASSET_INDEX_ID="${ASSET_INDEX_ID:-$INHERITED_VERSION_ASSET_INDEX_ID}"
+		INHERITED_VERSION_GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json" | tr "\n" " ")"
+		GAME_ARGUMENTS="$INHERITED_VERSION_GAME_ARGUMENTS $GAME_ARGUMENTS"
+	fi
 
 	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
 	| sed "s|\${version_name}|$VERSION|" \
