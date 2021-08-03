@@ -697,6 +697,13 @@ start_version() {
 	"$JAVA" -Djava.library.path="$MINEKISS_VERSIONS_DIR/$VERSION/lib" -cp "$CLASSPATH" $VERSION_MAIN_CLASS $GAME_ARGUMENTS
 }
 
+list_versions() {
+	ls -1 "$MINEKISS_VERSIONS_DIR" | while read -r VERSION
+	do
+		info "$VERSION"
+	done
+}
+
 # Configuration
 
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -753,6 +760,8 @@ trap cleanup EXIT
 case $1 in
 	download | d) fetch_latest_manifest && download "$2"; exit ;;
 	start | s) fetch_latest_manifest && start_version "$2"; exit ;;
+	versions | v) list_versions; exit ;;
+
 	authenticate | a) account_login "$2"; exit ;;
 	logout | l) account_logout "$2"; exit ;;
 	select | se) account_select "$2" ; exit ;;
@@ -764,9 +773,10 @@ then
 	error "Unrecognized command."
 else
 	EXECUTABLE_NAME="$(basename "$0")"
-	info "$EXECUTABLE_NAME [d|s] [version]"
+	info "$EXECUTABLE_NAME [d|s|v] [version]"
 	info "download Verify and download a Minecraft version into the cache directory"
 	info "start    Start a Minecraft version into the current directory"
+	info "versions List all currently downloaded versions"
 	info
 	info "$EXECUTABLE_NAME [a|l|se|ac] [account]"
 	info "authenticate Authenticate or refresh an account"
