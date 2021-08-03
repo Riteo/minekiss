@@ -120,6 +120,13 @@ get_library_index_from_metadata_file() {
 	done
 }
 
+get_unformatted_game_arguments_from_metadata_file() {
+	jq -r 'if .arguments.game != null
+		then .arguments.game[] | strings
+		else .minecraftArguments // empty
+		end' $1 | tr "\n" " "
+}
+
 token_refresh() {
 	curl -s -H "Content-Type: application/json" -d \
 	"{
@@ -611,16 +618,17 @@ start_version() {
 
 	# TODO: Find a way to manage stuff like resolution which is behind a rule.
 	# TODO: Format all arguments.
-	GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" "$VERSION_METADATA_FILE" | tr "\n" " ")"
+	GAME_ARGUMENTS="$(get_unformatted_game_arguments_from_metadata_file "$VERSION_METADATA_FILE")"
 
 	if [ "$VERSION_INHERITS" != "" ]
 	then
 		CLASSPATH="$CLASSPATH:$(get_library_index_from_metadata_file "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json" | awk '{print $1}' | tr "\n" ":")"
 		ASSET_INDEX_ID="${ASSET_INDEX_ID:-$INHERITED_VERSION_ASSET_INDEX_ID}"
-		INHERITED_VERSION_GAME_ARGUMENTS="$(jq -r "if has(\"arguments\") and (.arguments | has(\"game\")) then (.arguments.game[] | strings) else .minecraftArguments end" "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json" | tr "\n" " ")"
+		INHERITED_VERSION_GAME_ARGUMENTS="$(get_unformatted_game_arguments_from_metadata_file "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json")"
 		GAME_ARGUMENTS="$INHERITED_VERSION_GAME_ARGUMENTS $GAME_ARGUMENTS"
 	fi
 
+	# I have no idea how ${user_properties} is supposed to work
 	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
 	| sed "s|\${version_name}|$VERSION|" \
 	| sed "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
