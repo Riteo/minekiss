@@ -405,6 +405,7 @@ download() {
 		INHERITED_VERSION_PATH="$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS"
 		INHERITED_VERSION_INHERITS="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/inherits_from")"
 		INHERITED_VERSION_ASSET_INDEX_ID="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/assetindex_id")"
+		INHERITED_VERSION_ASSET_INDEX_FILE="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/assetindex_path")"
 
 		mkdir -p "$VERSION_DIR/lib"
 		ln -sf "$INHERITED_VERSION_PATH/$VERSION_INHERITS.jar" "$VERSION_DIR/$VERSION.jar"
@@ -509,7 +510,10 @@ download() {
 			fi
 		fi
 	else
-		warning "Unable to validate $VERSION's assets!"
+		if [ ! -f "$INHERITED_VERSION_ASSET_INDEX_FILE" ]
+		then
+			warning "No asset index for version $VERSION found!"
+		fi
 	fi
 
 	# Libraries
