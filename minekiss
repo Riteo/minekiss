@@ -337,8 +337,7 @@ convert_version_metadata() {
 fetch_latest_manifest() {
 	info "Fetching the latest version manifest..."
 
-	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
-	if ! curl -s "$MINEKISS_MANIFEST_URL" > "$VERSION_MANIFEST_FILE"
+	if ! curl -s --create-dirs "$MINEKISS_MANIFEST_URL" -o "$VERSION_MANIFEST_FILE"
 	then
 		if [ ! -f "$VERSION_MANIFEST_FILE" ]
 		then
@@ -424,9 +423,7 @@ download() {
 			if [ "$MINEKISS_OFFLINE" = "" ]
 			then
 				info "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
-				# We don't run mkdir here because the client will be downloaded in the same
-				# directory of the version metadata.
-				curl -s "$VERSION_CLIENT_URL" > "$VERSION_CLIENT_FILE"
+				curl -s --create-dirs "$VERSION_CLIENT_URL" -o "$VERSION_CLIENT_FILE"
 			else
 				warning "Integrity check for \"$(basename "$ASSET_INDEX_FILE")\" failed! Unable to download it due to missing internet connection."
 				MINEKISS_INTEGRITY=0
