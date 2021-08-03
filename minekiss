@@ -334,6 +334,15 @@ download() {
 		# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
 		VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
 
+		CONVERTED_METADATA_PATH="$(convert_version_metadata "$VERSION_METADATA_FILE")"
+		VERSION_INHERITS="$(cat "$CONVERTED_METADATA_PATH/inherits_from")"
+		VERSION_CLIENT_URL="$(cat "$CONVERTED_METADATA_PATH/client_url")"
+		VERSION_CLIENT_SHA1="$(cat "$CONVERTED_METADATA_PATH/client_sha1")"
+		ASSET_INDEX_ID="$(cat "$CONVERTED_METADATA_PATH/assetindex_id")"
+		ASSET_INDEX_URL="$(cat "$CONVERTED_METADATA_PATH/assetindex_url")"
+		ASSET_INDEX_SHA1="$(cat "$CONVERTED_METADATA_PATH/assetindex_sha1")"
+		ASSET_INDEX_FILE="$(cat "$CONVERTED_METADATA_PATH/assetindex_path")"
+
 		if ! printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
 		then
 			if [ "$MINEKISS_OFFLINE" = "" ]
@@ -356,15 +365,6 @@ download() {
 	then
 		error "Version not found!"
 	fi
-
-	CONVERTED_METADATA_PATH="$(convert_version_metadata "$VERSION_METADATA_FILE")"
-	VERSION_INHERITS="$(cat "$CONVERTED_METADATA_PATH/inherits_from")"
-	VERSION_CLIENT_URL="$(cat "$CONVERTED_METADATA_PATH/client_url")"
-	VERSION_CLIENT_SHA1="$(cat "$CONVERTED_METADATA_PATH/client_sha1")"
-	ASSET_INDEX_ID="$(cat "$CONVERTED_METADATA_PATH/assetindex_id")"
-	ASSET_INDEX_URL="$(cat "$CONVERTED_METADATA_PATH/assetindex_url")"
-	ASSET_INDEX_SHA1="$(cat "$CONVERTED_METADATA_PATH/assetindex_sha1")"
-	ASSET_INDEX_FILE="$(cat "$CONVERTED_METADATA_PATH/assetindex_path")"
 
 	if [ "$VERSION_INHERITS" != "" ]
 	then
