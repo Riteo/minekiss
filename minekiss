@@ -751,12 +751,12 @@ trap abort INT
 trap cleanup EXIT
 
 case $1 in
-	download | d) fetch_latest_manifest && download "$2" && exit ;;
-	start | s) fetch_latest_manifest && start_version "$2" && exit ;;
-	authenticate | a) account_login "$2" && exit ;;
-	logout | l) account_logout "$2" && exit ;;
-	select | se) account_select "$2"  && exit ;;
-	accounts | ac) account_list && exit ;;
+	download | d) fetch_latest_manifest && download "$2"; exit ;;
+	start | s) fetch_latest_manifest && start_version "$2"; exit ;;
+	authenticate | a) account_login "$2"; exit ;;
+	logout | l) account_logout "$2"; exit ;;
+	select | se) account_select "$2" ; exit ;;
+	accounts | ac) account_list; exit ;;
 esac
 
 if [ "$1" != "" ]
