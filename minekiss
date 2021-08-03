@@ -356,7 +356,7 @@ download() {
 	if [ "$VERSION_METADATA_URL" != "" ]
 	then
 		# Metadata
-		info "Validating the current version metadata..."
+		info "Validating $VERSION's metadata..."
 
 		# The SHA1 is for some reason only encoded into the version metadata path.
 		# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
