@@ -766,7 +766,7 @@ else
 	EXECUTABLE_NAME="$(basename "$0")"
 	info "$EXECUTABLE_NAME [d|s] [version]"
 	info "download Verify and download a Minecraft version into the cache directory"
-	info "start    Start a Minecraft version into the current drectory"
+	info "start    Start a Minecraft version into the current directory"
 	info
 	info "$EXECUTABLE_NAME [a|l|se|ac] [account]"
 	info "authenticate Authenticate or refresh an account"
