@@ -334,9 +334,7 @@ convert_version_metadata() {
 	printf "%s\n" "$CONVERTED_VERSION_PATH"
 }
 
-download() {
-	MINEKISS_INTEGRITY=1
-
+fetch_latest_manifest() {
 	info "Fetching the latest version manifest..."
 
 	mkdir -p "$(dirname "$VERSION_MANIFEST_FILE")"
@@ -350,6 +348,10 @@ download() {
 			MINEKISS_OFFLINE=1
 		fi
 	fi
+}
+
+download() {
+	MINEKISS_INTEGRITY=1
 
 	parse_version_id "$1"
 
@@ -752,8 +754,8 @@ trap abort INT
 trap cleanup EXIT
 
 case $1 in
-	download | d) download "$2" && exit ;;
-	start | s) start_version "$2" && exit ;;
+	download | d) fetch_latest_manifest && download "$2" && exit ;;
+	start | s) fetch_latest_manifest && start_version "$2" && exit ;;
 	authenticate | a) account_login "$2" && exit ;;
 	logout | l) account_logout "$2" && exit ;;
 	select | se) account_select "$2"  && exit ;;
