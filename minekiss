@@ -37,7 +37,6 @@
 # TODO: Add some more error handling
 # TODO: Properly manage pre-1.6 assets
 # TODO: Make the converted formats cleaner (tab separated?)
-# TODO: Find a portable way of switching Java versions or at least find a way to configure them
 # TODO: Remove all platform-specific stuff, detect the current OS and set all rules properly.
 
 # Bruh
@@ -684,9 +683,10 @@ start_version() {
 		| sed "s|\${game_assets}|$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID|")"
 	fi
 
-	# TODO: Find out if there's a better way to switch Java runtimes.
-	if [ "$JAVA" = "" ]
+	if [ "$JAVA_HOME" != "" ]
 	then
+		JAVA="$JAVA_HOME/bin/java"
+	else
 		JAVA="java"
 	fi
 
