@@ -152,7 +152,7 @@ get_unformatted_game_arguments_from_metadata_file() {
 	jq -r 'if .arguments.game != null
 		then .arguments.game[] | strings
 		else .minecraftArguments // empty
-		end' $1 | tr "\n" " "
+		end' "$1" | tr "\n" " "
 }
 
 token_refresh() {
@@ -482,6 +482,9 @@ download() {
 
 			if [ "$MINEKISS_OFFLINE" != "" ]
 			then
+				# It's easier for now to read with unused variables. I might switch to
+				# tab-separated files one day.
+				# shellcheck disable=SC2034
 				grep -f "$FAILED_ASSETS" "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH ASSET_URL
 				do
 					warning "Integrity check for \"$$ASSET_GAME_PATH\" failed! Unable to download it due to missing internet connection."
@@ -501,7 +504,7 @@ download() {
 				awk '!seen[$1]++' "$CONVERTED_ASSET_INDEX" > "$UNIQUE_ASSET_INDEX"
 
 				grep -f "$FAILED_ASSETS" "$UNIQUE_ASSET_INDEX" \
-				| awk '{print "url " $4 "\n" "output " $2 "\n"}' | curl --create-dirs -K - -s -w "%{url}\n" | while read url
+				| awk '{print "url " $4 "\n" "output " $2 "\n"}' | curl --create-dirs -K - -s -w "%{url}\n" | while read -r url
 				do
 					info "Downloaded \"$(grep -F "$url" "$UNIQUE_ASSET_INDEX" | awk '{print $3}')\"."
 				done
@@ -700,6 +703,9 @@ list_versions() {
 	if ! is_directory_empty "$MINEKISS_VERSIONS_DIR"
 	then
 		# Printing with the format itself allows us to avoid a whole subshell.
+		#
+		# This variable is intended to be parsed as a format string.
+		# shellcheck disable=2059
 		printf -- "$INFO_FORMAT" "$MINEKISS_VERSIONS_DIR"/*
 	fi
 }
