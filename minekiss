@@ -30,13 +30,13 @@
 
 # TODO: Make a version inherit everything from its parent when appropiate
 # TODO: Validating -> Checking?
-# TODO: Re-add Fabric support
 # TODO: More settings (eg. minekiss root, prompts etc)
 # TODO: Properly manage missing accounts and invalid tokens
 # TODO: Have an idea of what to do with multiple downloading instances
 # TODO: Properly parse all library and jvm rules
 # TODO: Add some more error handling
 # TODO: Properly manage pre-1.6 assets
+# TODO: Make the converted formats cleaner (tab separated?)
 # TODO: Find a portable way of switching Java versions or at least find a way to configure them
 # TODO: Remove all platform-specific stuff, detect the current OS and set all rules properly.
 
