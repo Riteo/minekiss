@@ -698,10 +698,11 @@ start_version() {
 }
 
 list_versions() {
-	ls -1 "$MINEKISS_VERSIONS_DIR" | while read -r VERSION
-	do
-		info "$VERSION"
-	done
+	if ! is_directory_empty "$MINEKISS_VERSIONS_DIR"
+	then
+		# Printing with the format itself allows us to avoid a whole subshell.
+		printf -- "$INFO_FORMAT" "$MINEKISS_VERSIONS_DIR"/*
+	fi
 }
 
 # Configuration
