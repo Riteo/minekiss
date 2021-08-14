@@ -667,16 +667,16 @@ start_version() {
 	fi
 
 	# I have no idea how ${user_properties} is supposed to work
-	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
-	| sed "s|\${version_name}|$VERSION|" \
-	| sed "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
-	| sed "s|\${assets_index_name}|$ASSET_INDEX_ID|" \
-	| sed "s|\${version_type}|$(jq -r .type "$VERSION_METADATA_FILE")|" \
-	| sed "s|\${game_directory}|$MINEKISS_GAME_DIRECTORY|" \
-	| sed "s|\${user_properties}|{}|" \
-	| sed "s|\${auth_uuid}|$SELECTED_UUID|" \
-	| sed "s|\${auth_access_token}|$AUTH_TOKEN|" \
-	| sed "s|\${auth_player_name}|$SELECTED_USERNAME|")"
+	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" | sed \
+	-e "s|\${version_name}|$VERSION|" \
+	-e "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
+	-e "s|\${assets_index_name}|$ASSET_INDEX_ID|" \
+	-e "s|\${version_type}|$(jq -r .type "$VERSION_METADATA_FILE")|" \
+	-e "s|\${game_directory}|$MINEKISS_GAME_DIRECTORY|" \
+	-e "s|\${user_properties}|{}|" \
+	-e "s|\${auth_uuid}|$SELECTED_UUID|" \
+	-e "s|\${auth_access_token}|$AUTH_TOKEN|" \
+	-e "s|\${auth_player_name}|$SELECTED_USERNAME|")"
 
 	# Legacy argument formatting for compatibility.
 	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
