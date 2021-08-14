@@ -183,30 +183,36 @@ token_invalidate() {
 	}" "$MINEKISS_AUTH_SERVER_URL/invalidate"
 }
 
+request_account_authentication() {
+	curl -s --fail-with-body -H "Content-Type: application/json" -d @- "$MINEKISS_AUTH_SERVER_URL"/authenticate <<- EOF
+	{
+		"agent": {"name": "Minecraft",	"version": 1},
+		"username": "$1",
+		"password": "$2",
+		"clientToken": "$(cat "$USERDATA_DIR/client_id")"
+	}
+	EOF
+}
+
 # NOTE: This as of now just returns the only select profile (if any) as i'll
 # still have to implement Microsoft login properly when it becomes more
 # widespread. This will suffice for now.
 #
 # FORMAT: [ACCESS TOKEN] [PROFILE NAME] [PROFILE UUID]
-account_authenticate() {
-	curl -s --fail-with-body -H "Content-Type: application/json" -d \
-	"{
-		\"agent\": {
-			\"name\": \"Minecraft\",
-			\"version\": 1
-		},
-		\"username\": \"$1\",
-		\"password\": \"$2\",
-		\"clientToken\": \"$(cat "$USERDATA_DIR/client_id")\"
-	}" "$MINEKISS_AUTH_SERVER_URL"/authenticate | jq -r \
-	"if has(\"accessToken\")
+parse_account_authentication_response() {
+	jq -r \
+	'if has("accessToken")
 	then
-		if (has(\"selectedProfile\"))
-		then .accessToken + \" \" + (.selectedProfile | .name + \" \" + .id )
-		else \"No Minecraft profile found.\" | halt_error(2)
+		if has("selectedProfile")
+		then .accessToken + " " + (.selectedProfile | .name + " " + .id )
+		else "No Minecraft profile found." | halt_error(2)
 		end
-	else \"Authentication failed: \" + .errorMessage + \"\n\" | halt_error(1)
-	end"
+	else "Authentication failed: " + .errorMessage + "\n" | halt_error(1)
+	end'
+}
+
+account_authenticate() {
+	request_account_authentication "$1" "$2" | parse_account_authentication_response
 }
 
 account_write() {
