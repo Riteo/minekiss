@@ -54,9 +54,7 @@ abort() {
 cleanup() {
 	if [ "$MINEKISS_DEBUG" = "" ]
 	then
-		if ! is_directory_empty "$MINEKISS_TEMP_DIR"
-		then info "Cleaning up..."
-		fi
+		is_directory_empty "$MINEKISS_TEMP_DIR" || info "Cleaning up..."
 
 		rm -rf "$MINEKISS_TEMP_DIR"
 	fi
@@ -260,9 +258,7 @@ account_login() {
 }
 
 account_list() {
-	if ! is_directory_empty "$USERDATA_DIR/accounts/"
-	then
-		printf "%s\n" "$USERDATA_DIR/accounts/"*/ 2>/dev/null | while read -r ACCOUNT
+	is_directory_empty "$USERDATA_DIR/accounts/" || printf "%s\n" "$USERDATA_DIR/accounts/"*/ 2>/dev/null | while read -r ACCOUNT
 		do
 			info "$(basename "$ACCOUNT")"
 		done
@@ -279,9 +275,7 @@ account_logout() {
 
 	ACCOUNT_PATH="$USERDATA_DIR/accounts/$ACCOUNT"
 
-	if [ ! -d "$ACCOUNT_PATH" ]
-		then error "Account not found."
-	fi
+	[ -d "$ACCOUNT_PATH" ] || error "Account not found."
 
 	token_invalidate "$(cat "$ACCOUNT_PATH/auth_token")"
 	rm -rf "$ACCOUNT_PATH"
@@ -359,7 +353,7 @@ download() {
 
 	parse_version_id "$1"
 
-	if [ "$VERSION_METADATA_URL" != "" ]
+	if [ "$VERSION_METADATA_URL" ]
 	then
 		# Metadata
 		info "Validating $VERSION's metadata..."
@@ -386,10 +380,7 @@ download() {
 		fi
 	fi
 
-	if ! [ -f "$VERSION_METADATA_FILE" ]
-	then
-		error "Version not found!"
-	fi
+	[ -f "$VERSION_METADATA_FILE" ] || error "Version not found!"
 
 	CONVERTED_METADATA_PATH="$(convert_version_metadata "$VERSION_METADATA_FILE")"
 	VERSION_INHERITS="$(cat "$CONVERTED_METADATA_PATH/inherits_from")"
@@ -400,7 +391,7 @@ download() {
 	ASSET_INDEX_SHA1="$(cat "$CONVERTED_METADATA_PATH/assetindex_sha1")"
 	ASSET_INDEX_FILE="$(cat "$CONVERTED_METADATA_PATH/assetindex_path")"
 
-	if [ "$VERSION_INHERITS" != "" ]
+	if [ "$VERSION_INHERITS" ]
 	then
 		info "Validating parent version $VERSION_INHERITS..."
 		(download "$VERSION_INHERITS")
@@ -417,7 +408,7 @@ download() {
 		ln -sf "$INHERITED_VERSION_PATH"/lib/* "$VERSION_DIR/lib"
 	fi
 
-	if [ "$VERSION_CLIENT_URL" != "" ] && [ "$VERSION_CLIENT_SHA1" != "" ]
+	if [ "$VERSION_CLIENT_URL" ] && [ "$VERSION_CLIENT_SHA1" ]
 	then
 		# Client
 		info "Validating $VERSION's client..."
@@ -435,14 +426,14 @@ download() {
 		fi
 	fi
 
-	if [ "$ASSET_INDEX_URL" != "" ] && [ "$ASSET_INDEX_SHA1" != "" ] && [ "$ASSET_INDEX_ID" != "" ]
+	if [ "$ASSET_INDEX_URL" ] && [ "$ASSET_INDEX_SHA1" ] && [ "$ASSET_INDEX_ID" ]
 	then
 		# Asset index
 		info "Validating $VERSION's asset index..."
 
 		if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
 		then
-			if [ "$MINEKISS_OFFLINE" != "" ]
+			if [ "$MINEKISS_OFFLINE" ]
 			then
 				warning "Integrity check for \"$(basename "$ASSET_INDEX_FILE")\" failed! Unable to download it due to missing internet connection."
 				MINEKISS_INTEGRITY=0
@@ -485,12 +476,10 @@ download() {
 
 			awk '{print $1 "  " $2}' "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
 
-			if [ "$MINEKISS_OFFLINE" != "" ]
-			then
 				# It's easier for now to read with unused variables. I might switch to
 				# tab-separated files one day.
 				# shellcheck disable=SC2034
-				grep -f "$FAILED_ASSETS" "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH ASSET_URL
+				[ "$MINEKISS_OFFLINE" ] && grep -f "$FAILED_ASSETS" "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH ASSET_URL
 				do
 					warning "Integrity check for \"$$ASSET_GAME_PATH\" failed! Unable to download it due to missing internet connection."
 				done
@@ -499,10 +488,7 @@ download() {
 			# We set MINEKISS_INTEGRITY only once if there are any broken assets.
 			if  grep -q . "$FAILED_ASSETS"
 			then
-				if [ "$MINEKISS_OFFLINE" != "" ]
-				then
-					MINEKISS_INTEGRITY=0
-				fi
+				[ "$MINEKISS_OFFLINE" ] && MINEKISS_INTEGRITY=0
 
 				UNIQUE_ASSET_INDEX="$MINEKISS_TEMP_DIR/unique_asset_index"
 				# Apparently the asset index might contain some duplicates, so we remove them here.
@@ -516,10 +502,7 @@ download() {
 			fi
 		fi
 	else
-		if [ ! -f "$INHERITED_VERSION_ASSET_INDEX_FILE" ]
-		then
-			warning "No asset index for version $VERSION found!"
-		fi
+		[ -f "$INHERITED_VERSION_ASSET_INDEX_FILE" ] || warning "No asset index for version $VERSION found!"
 	fi
 
 	# Libraries
@@ -536,7 +519,7 @@ download() {
 	awk '{if (length($3) != 40) print $1}' "$CONVERTED_LIBRARY_INDEX" >> "$FAILED_LIBS"
 
 	# We set MINEKISS_INTEGRITY only once if there are any broken library files.
-	if [ "$MINEKISS_OFFLINE" != "" ] && grep -q . "$FAILED_LIBS"
+	if [ "$MINEKISS_OFFLINE" ] && grep -q . "$FAILED_LIBS"
 	then
 		MINEKISS_INTEGRITY=0
 	fi
@@ -546,7 +529,7 @@ download() {
 	do
 		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
 
-		if [ "$MINEKISS_OFFLINE" != "" ]
+		if [ "$MINEKISS_OFFLINE" ]
 		then
 			warning "Integrity check for \"$LIBRARY_FILE_NAME\" failed! Unable to download it due to missing internet connection."
 			# We already set MINEKISS_INTEGRITY above.
@@ -601,10 +584,7 @@ download() {
 				mv "$NATIVE_LIBRARY_FILE" "$CHECKSUMMED_NATIVE_LIBRARY_FILE"
 			fi
 
-			if [ ! -f "$NATIVE_LIBRARY_LINK" ]
-			then
-				ln -sf "$CHECKSUMMED_NATIVE_LIBRARY_FILE" "$NATIVE_LIBRARY_LINK"
-			fi
+			[ -f "$NATIVE_LIBRARY_LINK" ] || ln -sf "$CHECKSUMMED_NATIVE_LIBRARY_FILE" "$NATIVE_LIBRARY_LINK"
 		done
 	done
 }
@@ -644,10 +624,7 @@ start_version() {
 
 	download "$VERSION"
 
-	if [ "$MINEKISS_INTEGRITY" = "0" ]
-	then
-		prompt "Validation failed, attempt running the game anyways? [Enter|^C]:" ANSWER
-	fi
+	[ "$MINEKISS_INTEGRITY" = "0" ] && prompt "Validation failed, attempt running the game anyways? [Enter|^C]:" ANSWER
 
 	CLASSPATH="$(get_library_index_from_metadata_file "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
 	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
@@ -658,7 +635,7 @@ start_version() {
 	# TODO: Format all arguments.
 	GAME_ARGUMENTS="$(get_unformatted_game_arguments_from_metadata_file "$VERSION_METADATA_FILE")"
 
-	if [ "$VERSION_INHERITS" != "" ]
+	if [ "$VERSION_INHERITS" ]
 	then
 		CLASSPATH="$CLASSPATH:$(get_library_index_from_metadata_file "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json" | awk '{print $1}' | tr "\n" ":")"
 		ASSET_INDEX_ID="${ASSET_INDEX_ID:-$INHERITED_VERSION_ASSET_INDEX_ID}"
@@ -689,7 +666,7 @@ start_version() {
 		| sed "s|\${game_assets}|$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID|")"
 	fi
 
-	if [ "$JAVA_HOME" != "" ]
+	if [ "$JAVA_HOME" ]
 	then
 		JAVA="$JAVA_HOME/bin/java"
 	else
@@ -706,14 +683,11 @@ start_version() {
 }
 
 list_versions() {
-	if ! is_directory_empty "$MINEKISS_VERSIONS_DIR"
-	then
-		# Printing with the format itself allows us to avoid a whole subshell.
-		#
-		# This variable is intended to be parsed as a format string.
-		# shellcheck disable=2059
-		printf -- "$INFO_FORMAT" "$MINEKISS_VERSIONS_DIR"/*
-	fi
+	# Printing with the format itself allows us to avoid a whole subshell.
+	#
+	# INFO_FORMAT is intended to be parsed as a format string.
+	# shellcheck disable=2059
+	is_directory_empty "$MINEKISS_VERSIONS_DIR" || printf -- "$INFO_FORMAT" "$MINEKISS_VERSIONS_DIR"/*
 }
 
 # Configuration
@@ -736,14 +710,9 @@ VERSION_MANIFEST_FILE="$USERDATA_DIR/version_manifest.json"
 mkdir -p "$MINEKISS_TEMP_DIR"
 mkdir -p "$USERDATA_DIR"
 
-if [ ! -f "$USERDATA_DIR/client_id" ]
-then (umask 077; uuidgen > "$USERDATA_DIR/client_id")
-fi
+[ -f "$USERDATA_DIR/client_id" ] || (umask 077; uuidgen > "$USERDATA_DIR/client_id")
 
-if [ ! -f "$USERDATA_DIR/selected_account" ]
-then
-	touch "$USERDATA_DIR/selected_account"
-fi
+[ -f "$USERDATA_DIR/selected_account" ] || "$USERDATA_DIR/selected_account"
 
 if [ -t 1 ]
 then
@@ -753,7 +722,7 @@ then
 	YELLOW_COLOR="$(tput setaf 3)"
 	RESET_COLOR="$(tput sgr0)"
 
-	if [ "$KISS_STYLE" != "" ]
+	if [ "$KISS_STYLE" ]
 	then
 		ERROR_FORMAT="$BOLD_MODIFIER$YELLOW_COLOR"ERROR"$RESET_COLOR"' %s\n'
 		WARNING_FORMAT="$BOLD_MODIFIER$YELLOW_COLOR"WARNING"$RESET_COLOR"' %s\n'
@@ -788,7 +757,7 @@ case $1 in
 	accounts | ac) account_list; exit ;;
 esac
 
-if [ "$1" != "" ]
+if [ "$1" ]
 then
 	error "Unrecognized command."
 else
