@@ -42,10 +42,10 @@
 # Bruh
 export LC_ALL="C"
 
-OLD_STTY="$(stty -g)"
+previous_stty="$(stty -g)"
 
 abort() {
-	stty "$OLD_STTY"
+	stty "$previous_stty"
 	printf "\n"
 
 	error "Aborted."
@@ -63,26 +63,26 @@ cleanup() {
 error() {
 	# This variable is intended to be parsed as a format string.
 	# shellcheck disable=2059
-	printf -- "$ERROR_FORMAT"  "$1" >&2
+	printf -- "$error_format"  "$1" >&2
 	exit 1
 }
 
 info() {
 	# This variable is intended to be parsed as a format string.
 	# shellcheck disable=2059
-	printf -- "$INFO_FORMAT" "$1"
+	printf -- "$info_format" "$1"
 }
 
 warning() {
 	# This variable is intended to be parsed as a format string.
 	# shellcheck disable=2059
-	printf -- "$WARNING_FORMAT" "$1" >&2
+	printf -- "$warning_format" "$1" >&2
 }
 
 prompt() {
 	# This variable is intended to be parsed as a format string.
 	# shellcheck disable=2059
-	printf "$PROMPT_FORMAT" "$1"
+	printf "$prompt_format" "$1"
 
 	# Not quoting the second argument allows leaving it empty without extra logic.
 	# shellcheck disable=SC2086
@@ -95,7 +95,7 @@ prompt_hidden() {
 
 	# This variable is intended to be parsed as a format string.
 	# shellcheck disable=2059
-	printf "$PROMPT_FORMAT" "$1"
+	printf "$prompt_format" "$1"
 
 	# Not quoting the second argument allows leaving it empty without extra logic.
 	# shellcheck disable=SC2086
@@ -107,9 +107,9 @@ prompt_hidden() {
 
 is_directory_empty() {
 	# This implmentation avoids ls and passes shellcheck through globbing.
-	DIRECTORY_PATH="$1"
+	directory_path="$1"
 	set -- "$1"/*
-	test "$*" = "$DIRECTORY_PATH/*"
+	test "$*" = "$directory_path/*"
 }
 
 get_relative_resource_path() {
@@ -130,18 +130,18 @@ get_library_index_from_metadata_file() {
 	| \"$MINEKISS_LIBRARIES_DIR/\" + .path + \" \" + .url + \" \" +  .sha1"  "$1"
 
 	# Maven library support
-	 jq -r '.libraries[] | select(has("name") and has("url")) | .name + " " + .url' "$1" | while read -r PACKAGE REPO_URL
+	 jq -r '.libraries[] | select(has("name") and has("url")) | .name + " " + .url' "$1" | while read -r package repo_url
 	do
-		RELATIVE_LIBRARY_PATH="$(printf "%s" "$PACKAGE" | {
-			IFS=":" read -r NAMESPACE NAME VERSION
-			printf "%s\n" "$(printf "%s" "$NAMESPACE" | tr "." "/")/$NAME/$VERSION/$NAME-$VERSION.jar"
+		relative_library_path="$(printf "%s" "$package" | {
+			IFS=":" read -r namespace name version
+			printf "%s\n" "$(printf "%s" "$namespace" | tr "." "/")/$name/$version/$name-$version.jar"
 		})"
 
-		LOCAL_LIBRARY_PATH="$MINEKISS_LIBRARIES_DIR/$RELATIVE_LIBRARY_PATH"
-		REMOTE_LIBRARY_PATH="$REPO_URL/$RELATIVE_LIBRARY_PATH"
-		LIBRARY_SHA1="$(cat "$LOCAL_LIBRARY_PATH.sha1" 2> /dev/null)"
+		local_library_path="$MINEKISS_LIBRARIES_DIR/$relative_library_path"
+		remote_library_path="$repo_url/$relative_library_path"
+		library_sha1="$(cat "$local_library_path.sha1" 2> /dev/null)"
 
-		printf "%s\n" "$LOCAL_LIBRARY_PATH $REMOTE_LIBRARY_PATH $LIBRARY_SHA1"
+		printf "%s\n" "$local_library_path $remote_library_path $library_sha1"
 	done
 }
 
@@ -156,7 +156,7 @@ token_refresh() {
 	curl -s -H "Content-Type: application/json" -d \
 	"{
 		\"accessToken\": \"$1\",
-		\"clientToken\": \"$(cat "$USERDATA_DIR/client_id")\"
+		\"clientToken\": \"$(cat "$userdata_dir/client_id")\"
 	}" "$MINEKISS_AUTH_SERVER_URL/refresh" | jq -r "
 		if has(\"accessToken\")
 		then .accessToken
@@ -169,7 +169,7 @@ token_is_valid() {
 	curl -s -f -H "Content-Type: application/json" -d \
 	"{
 		\"accessToken\":\"$1\",
-		\"clientToken\":\"$(cat "$USERDATA_DIR/client_id")\"
+		\"clientToken\":\"$(cat "$userdata_dir/client_id")\"
 	}" "$MINEKISS_AUTH_SERVER_URL/validate"
 }
 
@@ -177,7 +177,7 @@ token_invalidate() {
 	curl -s -f -H "Content-Type: application/json" -d \
 	"{
 		\"accessToken\": \"$1\",
-		\"clientToken\": \"$(cat "$USERDATA_DIR/client_id")\"
+		\"clientToken\": \"$(cat "$userdata_dir/client_id")\"
 	}" "$MINEKISS_AUTH_SERVER_URL/invalidate"
 }
 
@@ -187,7 +187,7 @@ request_account_authentication() {
 		"agent": {"name": "Minecraft",	"version": 1},
 		"username": "$1",
 		"password": "$2",
-		"clientToken": "$(cat "$USERDATA_DIR/client_id")"
+		"clientToken": "$(cat "$userdata_dir/client_id")"
 	}
 	EOF
 }
@@ -214,42 +214,42 @@ account_authenticate() {
 }
 
 account_write() {
-	EMAIL_ADDRESS="$1"
-	AUTH_TOKEN="$2"
-	PROFILE_NAME="$3"
-	PROFILE_UUID="$4"
+	email_address="$1"
+	auth_token="$2"
+	profile_name="$3"
+	profile_uuid="$4"
 
-	ACCOUNT_DIR="$USERDATA_DIR/accounts/$EMAIL_ADDRESS"
+	account_dir="$userdata_dir/accounts/$email_address"
 
 	umask 077
-	mkdir -p "$ACCOUNT_DIR/profiles"
-	printf "%s\n" "$AUTH_TOKEN" > "$ACCOUNT_DIR/auth_token"
-	printf "%s\n" "$PROFILE_NAME" > "$ACCOUNT_DIR/profiles/$PROFILE_UUID"
-	printf "%s\n" "$PROFILE_UUID" > "$ACCOUNT_DIR/profiles/selected_uuid"
-	printf "%s\n" "$EMAIL_ADDRESS" > "$USERDATA_DIR/selected_account"
+	mkdir -p "$account_dir/profiles"
+	printf "%s\n" "$auth_token" > "$account_dir/auth_token"
+	printf "%s\n" "$profile_name" > "$account_dir/profiles/$profile_uuid"
+	printf "%s\n" "$profile_uuid" > "$account_dir/profiles/selected_uuid"
+	printf "%s\n" "$email_address" > "$userdata_dir/selected_account"
 }
 
 account_login() {
 	if [ ! "$1" ]
 	then
-		ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+		account="$(cat "$userdata_dir/selected_account")"
 	else
-		ACCOUNT="$1"
+		account="$1"
 	fi
 
-	if [ "$ACCOUNT" = "" ]
+	if [ "$account" = "" ]
 	then
-		prompt "Username:" ACCOUNT
-		printf "%s\n" "$ACCOUNT" > "$USERDATA_DIR/selected_account"
+		prompt "username:" account
+		printf "%s\n" "$account" > "$userdata_dir/selected_account"
 	fi
 
-	PASSWORD="$2"
+	password="$2"
 
 	while true
 	do
-		prompt_hidden "Password for $ACCOUNT:" PASSWORD
-		account_authenticate "$ACCOUNT" "$PASSWORD" | if read -r AUTH_TOKEN PROFILE_NAME PROFILE_UUID
-		then account_write "$ACCOUNT" "$AUTH_TOKEN" "$PROFILE_NAME" "$PROFILE_UUID"
+		prompt_hidden "Password for $account:" password
+		account_authenticate "$account" "$password" | if read -r auth_token profile_name profile_uuid
+		then account_write "$account" "$auth_token" "$profile_name" "$profile_uuid"
 		else return 1 # We're inside a subshell due to the pipe
 		fi && break
 	done
@@ -258,39 +258,38 @@ account_login() {
 }
 
 account_list() {
-	is_directory_empty "$USERDATA_DIR/accounts/" || printf "%s\n" "$USERDATA_DIR/accounts/"*/ 2>/dev/null | while read -r ACCOUNT
-		do
-			info "$(basename "$ACCOUNT")"
-		done
-	fi
+	is_directory_empty "$userdata_dir/accounts/" || printf "%s\n" "$userdata_dir/accounts/"*/ 2>/dev/null | while read -r account
+	do
+		info "$(basename "$account")"
+	done
 }
 
 account_logout() {
 	if [ "$1" ]
 	then
-		ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+		account="$1"
 	else
-		ACCOUNT="$1"
+		account="$(cat "$userdata_dir/selected_account")"
 	fi
 
-	ACCOUNT_PATH="$USERDATA_DIR/accounts/$ACCOUNT"
+	account_path="$userdata_dir/accounts/$account"
 
-	[ -d "$ACCOUNT_PATH" ] || error "Account not found."
+	[ -d "$account_path" ] || error "Account not found."
 
-	token_invalidate "$(cat "$ACCOUNT_PATH/auth_token")"
-	rm -rf "$ACCOUNT_PATH"
+	token_invalidate "$(cat "$account_path/auth_token")"
+	rm -rf "$account_path"
 }
 
 account_select() {
 	if [ "$1" ]
 	then
-		printf "%s\n" "$1" > "$USERDATA_DIR/selected_account"
+		printf "%s\n" "$1" > "$userdata_dir/selected_account"
 	else
-		SELECTED_ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
+		selected_account="$(cat "$userdata_dir/selected_account")"
 
-		if [ "$SELECTED_ACCOUNT" ]
+		if [ "$selected_account" ]
 		then
-			info "Selected account: \"$SELECTED_ACCOUNT\""
+			info "Selected account: \"$selected_account\""
 		else
 			info "No default account selected."
 		fi
@@ -298,47 +297,47 @@ account_select() {
 }
 
 parse_version_id() {
-	VERSION=${1:-latest}
+	version=${1:-latest}
 
-	case "$VERSION" in
-		latest) VERSION="$(jq -r '.latest.release' "$VERSION_MANIFEST_FILE")" ;;
-		latest-snapshot) VERSION="$(jq -r '.latest.snapshot' "$VERSION_MANIFEST_FILE")";;
+	case "$version" in
+		latest) version="$(jq -r '.latest.release' "$version_manifest_file")" ;;
+		latest-snapshot) version="$(jq -r '.latest.snapshot' "$version_manifest_file")";;
 	esac
 
-	VERSION_DIR="$MINEKISS_VERSIONS_DIR/$VERSION"
-	VERSION_CLIENT_FILE="$VERSION_DIR/$VERSION.jar"
-	VERSION_METADATA_FILE="$VERSION_DIR/$VERSION.json"
-	VERSION_METADATA_URL="$(jq -r ".versions[] | select(.id == \"$VERSION\").url" "$VERSION_MANIFEST_FILE")"
+	version_dir="$MINEKISS_VERSIONS_DIR/$version"
+	version_client_file="$version_dir/$version.jar"
+	version_metadata_file="$version_dir/$version.json"
+	version_metadata_url="$(jq -r ".versions[] | select(.id == \"$version\").url" "$version_manifest_file")"
 }
 
 convert_version_metadata() {
 	# This could surely be optimized into one single call and parsed with simpler
 	# tools but it'll do for now.
-	VERSION_ID="$(jq -r ".id // empty" "$1")"
-	CONVERTED_VERSION_PATH="$MINEKISS_TEMP_DIR/converted_versions/$VERSION_ID"
+	version_id="$(jq -r ".id // empty" "$1")"
+	converted_version_path="$MINEKISS_TEMP_DIR/converted_versions/$version_id"
 
-	if is_directory_empty "$CONVERTED_VERSION_PATH"
+	if is_directory_empty "$converted_version_path"
 	then
-		mkdir -p "$CONVERTED_VERSION_PATH"
+		mkdir -p "$converted_version_path"
 
-		jq -r ".inheritsFrom // empty" "$1" > "$CONVERTED_VERSION_PATH/inherits_from"
-		jq -r ".downloads.client.url // empty" "$1" > "$CONVERTED_VERSION_PATH/client_url"
-		jq -r ".downloads.client.sha1 // empty" "$1" > "$CONVERTED_VERSION_PATH/client_sha1"
-		jq -r ".assetIndex.id // empty" "$1" > "$CONVERTED_VERSION_PATH/assetindex_id"
-		jq -r ".assetIndex.url // empty" "$1" > "$CONVERTED_VERSION_PATH/assetindex_url"
-		jq -r ".assetIndex.sha1 // empty" "$1" > "$CONVERTED_VERSION_PATH/assetindex_sha1"
-		printf "%s\n" "$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json" > "$CONVERTED_VERSION_PATH/assetindex_path"
+		jq -r ".inheritsFrom // empty" "$1" > "$converted_version_path/inherits_from"
+		jq -r ".downloads.client.url // empty" "$1" > "$converted_version_path/client_url"
+		jq -r ".downloads.client.sha1 // empty" "$1" > "$converted_version_path/client_sha1"
+		jq -r ".assetIndex.id // empty" "$1" > "$converted_version_path/assetindex_id"
+		jq -r ".assetIndex.url // empty" "$1" > "$converted_version_path/assetindex_url"
+		jq -r ".assetIndex.sha1 // empty" "$1" > "$converted_version_path/assetindex_sha1"
+		printf "%s\n" "$MINEKISS_ASSETS_DIR/indexes/$(cat "$converted_version_path/assetindex_id").json" > "$converted_version_path/assetindex_path"
 	fi
 
-	printf "%s\n" "$CONVERTED_VERSION_PATH"
+	printf "%s\n" "$converted_version_path"
 }
 
 fetch_latest_manifest() {
 	info "Fetching the latest version manifest..."
 
-	if ! curl -s --create-dirs "$MINEKISS_MANIFEST_URL" -o "$VERSION_MANIFEST_FILE"
+	if ! curl -s --create-dirs "$MINEKISS_MANIFEST_URL" -o "$version_manifest_file"
 	then
-		if [ ! -f "$VERSION_MANIFEST_FILE" ]
+		if [ ! -f "$version_manifest_file" ]
 		then
 			error "Unable to fetch the version manifest file and no cached version found, aborting!"
 		else
@@ -353,25 +352,25 @@ download() {
 
 	parse_version_id "$1"
 
-	if [ "$VERSION_METADATA_URL" ]
+	if [ "$version_metadata_url" ]
 	then
 		# Metadata
-		info "Validating $VERSION's metadata..."
+		info "Validating $version's metadata..."
 
 		# The SHA1 is for some reason only encoded into the version metadata path.
 		# URL format: https://launchermeta.mojang.com/v1/packages/SHA/VERSION.json
-		VERSION_METADATA_SHA1="$(basename "$(dirname "$VERSION_METADATA_URL")")"
+		version_metadata_sha1="$(basename "$(dirname "$version_metadata_url")")"
 
-		if ! printf "%s  %s\n" "$VERSION_METADATA_SHA1" "$VERSION_METADATA_FILE" | sha1sum -c 1>/dev/null 2>&1
+		if ! printf "%s  %s\n" "$version_metadata_sha1" "$version_metadata_file" | sha1sum -c 1>/dev/null 2>&1
 		then
-			if [ "$MINEKISS_OFFLINE" = "" ]
+			if [ ! "$MINEKISS_OFFLINE" ]
 			then
-				info "Downloading \"$(basename "$VERSION_METADATA_FILE")\"..."
-				curl -s "$VERSION_METADATA_URL" --create-dirs -o "$VERSION_METADATA_FILE"
+				info "Downloading \"$(basename "$version_metadata_file")\"..."
+				curl -s "$version_metadata_url" --create-dirs -o "$version_metadata_file"
 			else
-				if [ -f "$VERSION_METADATA_FILE" ]
+				if [ -f "$version_metadata_file" ]
 				then
-					warning "Integrity check for \"$(basename "$VERSION_METADATA_FILE")\" failed! Unable to download it due to missing internet connection."
+					warning "Integrity check for \"$(basename "$version_metadata_file")\" failed! Unable to download it due to missing internet connection."
 					MINEKISS_INTEGRITY=0
 				else
 					error "Unable to download the version metadata file."
@@ -380,82 +379,82 @@ download() {
 		fi
 	fi
 
-	[ -f "$VERSION_METADATA_FILE" ] || error "Version not found!"
+	[ -f "$version_metadata_file" ] || error "Version not found!"
 
-	CONVERTED_METADATA_PATH="$(convert_version_metadata "$VERSION_METADATA_FILE")"
-	VERSION_INHERITS="$(cat "$CONVERTED_METADATA_PATH/inherits_from")"
-	VERSION_CLIENT_URL="$(cat "$CONVERTED_METADATA_PATH/client_url")"
-	VERSION_CLIENT_SHA1="$(cat "$CONVERTED_METADATA_PATH/client_sha1")"
-	ASSET_INDEX_ID="$(cat "$CONVERTED_METADATA_PATH/assetindex_id")"
-	ASSET_INDEX_URL="$(cat "$CONVERTED_METADATA_PATH/assetindex_url")"
-	ASSET_INDEX_SHA1="$(cat "$CONVERTED_METADATA_PATH/assetindex_sha1")"
-	ASSET_INDEX_FILE="$(cat "$CONVERTED_METADATA_PATH/assetindex_path")"
+	converted_metadata_path="$(convert_version_metadata "$version_metadata_file")"
+	version_inherits="$(cat "$converted_metadata_path/inherits_from")"
+	version_client_url="$(cat "$converted_metadata_path/client_url")"
+	version_client_sha1="$(cat "$converted_metadata_path/client_sha1")"
+	asset_index_id="$(cat "$converted_metadata_path/assetindex_id")"
+	asset_index_url="$(cat "$converted_metadata_path/assetindex_url")"
+	asset_index_sha1="$(cat "$converted_metadata_path/assetindex_sha1")"
+	asset_index_file="$(cat "$converted_metadata_path/assetindex_path")"
 
-	if [ "$VERSION_INHERITS" ]
+	if [ "$version_inherits" ]
 	then
-		info "Validating parent version $VERSION_INHERITS..."
-		(download "$VERSION_INHERITS")
+		info "Validating parent version $version_inherits..."
+		(download "$version_inherits")
 
 		# Downloading will alredy have converted its metadata
-		CONVERTED_INHERITED_VERSION_METADATA_PATH="$MINEKISS_TEMP_DIR/converted_versions/$VERSION_INHERITS"
+		converted_inherited_version_metadata_path="$MINEKISS_TEMP_DIR/converted_versions/$version_inherits"
 
-		INHERITED_VERSION_PATH="$MINEKISS_VERSIONS_DIR/$VERSION_INHERITS"
-		INHERITED_VERSION_ASSET_INDEX_ID="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/assetindex_id")"
-		INHERITED_VERSION_ASSET_INDEX_FILE="$(cat "$CONVERTED_INHERITED_VERSION_METADATA_PATH/assetindex_path")"
+		inherited_version_path="$MINEKISS_VERSIONS_DIR/$version_inherits"
+		inherited_version_asset_index_id="$(cat "$converted_inherited_version_metadata_path/assetindex_id")"
+		inherited_version_asset_index_file="$(cat "$converted_inherited_version_metadata_path/assetindex_path")"
 
-		mkdir -p "$VERSION_DIR/lib"
-		ln -sf "$INHERITED_VERSION_PATH/$VERSION_INHERITS.jar" "$VERSION_DIR/$VERSION.jar"
-		ln -sf "$INHERITED_VERSION_PATH"/lib/* "$VERSION_DIR/lib"
+		mkdir -p "$version_dir/lib"
+		ln -sf "$inherited_version_path/$version_inherits.jar" "$version_dir/$version.jar"
+		ln -sf "$inherited_version_path"/lib/* "$version_dir/lib"
 	fi
 
-	if [ "$VERSION_CLIENT_URL" ] && [ "$VERSION_CLIENT_SHA1" ]
+	if [ "$version_client_url" ] && [ "$version_client_sha1" ]
 	then
 		# Client
-		info "Validating $VERSION's client..."
+		info "Validating $version's client..."
 
-		if ! printf "%s  %s\n" "$VERSION_CLIENT_SHA1" "$VERSION_CLIENT_FILE" | sha1sum -c 1>/dev/null 2>&1
+		if ! printf "%s  %s\n" "$version_client_sha1" "$version_client_file" | sha1sum -c 1>/dev/null 2>&1
 		then
 			if [ "$MINEKISS_OFFLINE" = "" ]
 			then
-				info "Downloading \"$(basename "$VERSION_CLIENT_FILE")\"..."
-				curl -s --create-dirs "$VERSION_CLIENT_URL" -o "$VERSION_CLIENT_FILE"
+				info "Downloading \"$(basename "$version_client_file")\"..."
+				curl -s --create-dirs "$version_client_url" -o "$version_client_file"
 			else
-				warning "Integrity check for \"$(basename "$ASSET_INDEX_FILE")\" failed! Unable to download it due to missing internet connection."
+				warning "Integrity check for \"$(basename "$asset_index_file")\" failed! Unable to download it due to missing internet connection."
 				MINEKISS_INTEGRITY=0
 			fi
 		fi
 	fi
 
-	if [ "$ASSET_INDEX_URL" ] && [ "$ASSET_INDEX_SHA1" ] && [ "$ASSET_INDEX_ID" ]
+	if [ "$asset_index_url" ] && [ "$asset_index_sha1" ] && [ "$asset_index_id" ]
 	then
 		# Asset index
-		info "Validating $VERSION's asset index..."
+		info "Validating $version's asset index..."
 
-		if ! printf "%s  %s\n" "$ASSET_INDEX_SHA1" "$ASSET_INDEX_FILE" | sha1sum -c 1>/dev/null 2>&1
+		if ! printf "%s  %s\n" "$asset_index_sha1" "$asset_index_file" | sha1sum -c 1>/dev/null 2>&1
 		then
 			if [ "$MINEKISS_OFFLINE" ]
 			then
-				warning "Integrity check for \"$(basename "$ASSET_INDEX_FILE")\" failed! Unable to download it due to missing internet connection."
+				warning "Integrity check for \"$(basename "$asset_index_file")\" failed! Unable to download it due to missing internet connection."
 				MINEKISS_INTEGRITY=0
 			else
-				info "Downloading \"$(basename "$ASSET_INDEX_FILE")\"..."
+				info "Downloading \"$(basename "$asset_index_file")\"..."
 
-				curl -s "$ASSET_INDEX_URL" --create-dirs -o "$ASSET_INDEX_FILE"
+				curl -s "$asset_index_url" --create-dirs -o "$asset_index_file"
 			fi
 		fi
 
-		if [ -f "$ASSET_INDEX_FILE" ]
+		if [ -f "$asset_index_file" ]
 		then
 			# TODO: Add support for the older asset indexes.
-			info "Validating $ASSET_INDEX_ID's assets..."
+			info "Validating $asset_index_id's assets..."
 
-			if [ "$ASSET_INDEX_ID" = "pre-1.6" ]
+			if [ "$asset_index_id" = "pre-1.6" ]
 			then
 				error "Pre 1.6 version detected! Download stopped as legacy asset managing is not supported yet."
 			fi
 
-			CONVERTED_ASSET_INDEX="$MINEKISS_TEMP_DIR/converted_asset_index"
-			FAILED_ASSETS="$MINEKISS_TEMP_DIR/failed_assets"
+			converted_asset_index="$MINEKISS_TEMP_DIR/converted_asset_index"
+			failed_assets="$MINEKISS_TEMP_DIR/failed_assets"
 
 			# Le epic conversion: [le hash] [le actual path] [le game path] [le asset url]
 			# This allows us to use the shell's own word splitting as a blazingly fast line
@@ -469,122 +468,121 @@ download() {
 					then
 					\"$MINEKISS_ASSETS_DIR/objects/\" + .value.hash[0:2]+ \"/\" + .value.hash
 					else
-					\"$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID\" + \"/\" + .key
+					\"$MINEKISS_ASSETS_DIR/virtual/$asset_index_id\" + \"/\" + .key
 					end)
 				+ \" \"	+ .key + \" \"
-				+ \"$MINEKISS_RESOURCES_URL/\" + .value.hash[0:2] + \"/\" + .value.hash" "$ASSET_INDEX_FILE" > "$CONVERTED_ASSET_INDEX"
+				+ \"$MINEKISS_RESOURCES_URL/\" + .value.hash[0:2] + \"/\" + .value.hash" "$asset_index_file" > "$converted_asset_index"
 
-			awk '{print $1 "  " $2}' "$CONVERTED_ASSET_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_ASSETS"
+			awk '{print $1 "  " $2}' "$converted_asset_index" | sha1sum -c 2> /dev/null | grep -i failed | cut -d ":" -f 1 > "$failed_assets"
 
-				# It's easier for now to read with unused variables. I might switch to
-				# tab-separated files one day.
-				# shellcheck disable=SC2034
-				[ "$MINEKISS_OFFLINE" ] && grep -f "$FAILED_ASSETS" "$CONVERTED_ASSET_INDEX" | while read -r ASSET_SHA1 ASSET_FILE_PATH ASSET_GAME_PATH ASSET_URL
-				do
-					warning "Integrity check for \"$$ASSET_GAME_PATH\" failed! Unable to download it due to missing internet connection."
-				done
-			fi
+			# It's easier for now to read with unused variables. I might switch to
+			# tab-separated files one day.
+			# shellcheck disable=SC2034
+			[ "$MINEKISS_OFFLINE" ] && grep -f "$failed_assets" "$converted_asset_index" | while read -r asset_sha1 asset_file_path asset_game_path asset_url
+			do
+				warning "Integrity check for \"$$asset_game_path\" failed! Unable to download it due to missing internet connection."
+			done
 
 			# We set MINEKISS_INTEGRITY only once if there are any broken assets.
-			if  grep -q . "$FAILED_ASSETS"
+			if grep -q . "$failed_assets"
 			then
 				[ "$MINEKISS_OFFLINE" ] && MINEKISS_INTEGRITY=0
 
-				UNIQUE_ASSET_INDEX="$MINEKISS_TEMP_DIR/unique_asset_index"
+				unique_asset_index="$MINEKISS_TEMP_DIR/unique_asset_index"
 				# Apparently the asset index might contain some duplicates, so we remove them here.
-				awk '!seen[$1]++' "$CONVERTED_ASSET_INDEX" > "$UNIQUE_ASSET_INDEX"
+				awk '!seen[$1]++' "$converted_asset_index" > "$unique_asset_index"
 
-				grep -f "$FAILED_ASSETS" "$UNIQUE_ASSET_INDEX" \
+				grep -f "$failed_assets" "$unique_asset_index" \
 				| awk '{print "url " $4 "\n" "output " $2 "\n"}' | curl --create-dirs -K - -s -w "%{url}\n" | while read -r url
 				do
-					info "Downloaded \"$(grep -F "$url" "$UNIQUE_ASSET_INDEX" | awk '{print $3}')\"."
+					info "Downloaded \"$(grep -F "$url" "$unique_asset_index" | awk '{print $3}')\"."
 				done
 			fi
 		fi
 	else
-		[ -f "$INHERITED_VERSION_ASSET_INDEX_FILE" ] || warning "No asset index for version $VERSION found!"
+		[ -f "$inherited_version_asset_index_file" ] || warning "No asset index for version $version found!"
 	fi
 
 	# Libraries
-	info "Validating $VERSION's libraries..."
+	info "Validating $version's libraries..."
 
-	CONVERTED_LIBRARY_INDEX="$MINEKISS_TEMP_DIR/converted_library_index"
-	FAILED_LIBS="$MINEKISS_TEMP_DIR/failed_libs"
+	converted_library_index="$MINEKISS_TEMP_DIR/converted_library_index"
+	failed_libs="$MINEKISS_TEMP_DIR/failed_libs"
 
-	get_library_index_from_metadata_file "$VERSION_METADATA_FILE" > "$CONVERTED_LIBRARY_INDEX"
+	get_library_index_from_metadata_file "$version_metadata_file" > "$converted_library_index"
 
-	awk '{print $3 "  " $1}' "$CONVERTED_LIBRARY_INDEX" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$FAILED_LIBS"
+	awk '{print $3 "  " $1}' "$converted_library_index" | sha1sum -c 2> /dev/null | grep FAILED | cut -d ":" -f 1 > "$failed_libs"
 
 	# We look for clearly invalid checksums by looking at their length.
-	awk '{if (length($3) != 40) print $1}' "$CONVERTED_LIBRARY_INDEX" >> "$FAILED_LIBS"
+	awk '{if (length($3) != 40) print $1}' "$converted_library_index" >> "$failed_libs"
 
 	# We set MINEKISS_INTEGRITY only once if there are any broken library files.
-	if [ "$MINEKISS_OFFLINE" ] && grep -q . "$FAILED_LIBS"
+	if [ "$MINEKISS_OFFLINE" ] && grep -q . "$failed_libs"
 	then
 		MINEKISS_INTEGRITY=0
 	fi
 
 	# TODO: Avoid grep | awk
-	grep -f "$FAILED_LIBS" "$CONVERTED_LIBRARY_INDEX" | awk '{print $1 "  " $2}' | while read -r LIBRARY_FILE LIBRARY_URL
+	grep -f "$failed_libs" "$converted_library_index" | awk '{print $1 "  " $2}' | while read -r library_file library_url
 	do
-		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
+		library_file_name="$(basename "$library_file")"
 
 		if [ "$MINEKISS_OFFLINE" ]
 		then
-			warning "Integrity check for \"$LIBRARY_FILE_NAME\" failed! Unable to download it due to missing internet connection."
+			warning "Integrity check for \"$library_file_name\" failed! Unable to download it due to missing internet connection."
 			# We already set MINEKISS_INTEGRITY above.
 			continue
 		fi
 		
-		info "Downloading \"$LIBRARY_FILE_NAME\"..."
+		info "Downloading \"$library_file_name\"..."
 
-		curl -s -f "$LIBRARY_URL" --create-dirs -o "$LIBRARY_FILE"
-		curl -s -f "$LIBRARY_URL.sha1" --create-dirs -o "$LIBRARY_FILE.sha1"
+		curl -s -f "$library_url" --create-dirs -o "$library_file"
+		curl -s -f "$library_url.sha1" --create-dirs -o "$library_file.sha1"
 	done
 
-	info "Validating $VERSION's native libraries..."
+	info "Validating $version's native libraries..."
 
-	mkdir -p "$VERSION_DIR/lib"
-	grep "native" "$CONVERTED_LIBRARY_INDEX" | while read -r LIBRARY_FILE LIBRARY_SHA1 LIBRARY_URL
+	mkdir -p "$version_dir/lib"
+	grep "native" "$converted_library_index" | while read -r library_file library_sha1 library_url
 	do
-		LIBRARY_FILE_NAME="$(basename "$LIBRARY_FILE")"
-		LIBRARY_DIRECTORY="$(dirname "$LIBRARY_FILE")"
+		library_file_name="$(basename "$library_file")"
+		library_directory="$(dirname "$library_file")"
 
-		mkdir -p "$LIBRARY_DIRECTORY/native"
+		mkdir -p "$library_directory/native"
 
-		for NATIVE_LIBRARY_FILE_NAME in $(zipinfo -1 "$LIBRARY_FILE" -x 'META-INF/*' '*.git' '*.sha1' 2> /dev/null)
+		for native_library_file_name in $(zipinfo -1 "$library_file" -x 'META-INF/*' '*.git' '*.sha1' 2> /dev/null)
 		do
 			# We fetch the first matching element and work on that, otherwise any other
 			# similarly named file might get stuck there forever.
-			CHECKSUMMED_NATIVE_LIBRARY_FILE="$(printf "%s " "$LIBRARY_DIRECTORY/native/$NATIVE_LIBRARY_FILE_NAME".* | cut -d " " -f 1)"
-			CHECKSUMMED_NATIVE_LIBRARY_FILE_NAME="$(basename "$CHECKSUMMED_NATIVE_LIBRARY_FILE")"
+			checksummed_native_library_file="$(printf "%s " "$library_directory/native/$native_library_file_name".* | cut -d " " -f 1)"
+			checksummed_native_library_file_name="$(basename "$checksummed_native_library_file")"
 
-			NATIVE_LIBRARY_FILE="$LIBRARY_DIRECTORY/native/$NATIVE_LIBRARY_FILE_NAME"
-			NATIVE_LIBRARY_FILE_SHA1="${CHECKSUMMED_NATIVE_LIBRARY_FILE_NAME##*.}"
-			NATIVE_LIBRARY_FILE_CURRENT_SHA1="$(sha1sum "$CHECKSUMMED_NATIVE_LIBRARY_FILE" 2> /dev/null | cut -d ' ' -f 1)"
-			NATIVE_LIBRARY_LINK="$VERSION_DIR/lib/$NATIVE_LIBRARY_FILE_NAME"
+			native_library_file="$library_directory/native/$native_library_file_name"
+			native_library_file_sha1="${checksummed_native_library_file_name##*.}"
+			native_library_file_current_sha1="$(sha1sum "$checksummed_native_library_file" 2> /dev/null | cut -d ' ' -f 1)"
+			native_library_link="$version_dir/lib/$native_library_file_name"
 
 			# We steer off a bit from the traditional native library management by
 			# storing each decompressed library into a folder with its checksum
 			# appended to its name. We then parse it to get its original checksum
 			# and compare it.
 			# Thanks to Dylan Araps for this great idea.
-			if [ "$NATIVE_LIBRARY_FILE_CURRENT_SHA1" != "$NATIVE_LIBRARY_FILE_SHA1" ]
+			if [ "$native_library_file_current_sha1" != "$native_library_file_sha1" ]
 			then
-				rm -f "$CHECKSUMMED_NATIVE_LIBRARY_FILE"
-				info "Extracting \"$NATIVE_LIBRARY_FILE_NAME\"..."
+				rm -f "$checksummed_native_library_file"
+				info "Extracting \"$native_library_file_name\"..."
 
 				(
-					cd "$LIBRARY_DIRECTORY/native" || exit
-					unzip -qqo "$LIBRARY_FILE" "$NATIVE_LIBRARY_FILE_NAME"
+					cd "$library_directory/native" || exit
+					unzip -qqo "$library_file" "$native_library_file_name"
 				)
 
-				NATIVE_LIBRARY_FILE_SHA1="$(sha1sum "$NATIVE_LIBRARY_FILE" 2> /dev/null | cut -d ' ' -f 1)"
-				CHECKSUMMED_NATIVE_LIBRARY_FILE="$NATIVE_LIBRARY_FILE.$NATIVE_LIBRARY_FILE_SHA1"
-				mv "$NATIVE_LIBRARY_FILE" "$CHECKSUMMED_NATIVE_LIBRARY_FILE"
+				native_library_file_sha1="$(sha1sum "$native_library_file" 2> /dev/null | cut -d ' ' -f 1)"
+				checksummed_native_library_file="$native_library_file.$native_library_file_sha1"
+				mv "$native_library_file" "$checksummed_native_library_file"
 			fi
 
-			[ -f "$NATIVE_LIBRARY_LINK" ] || ln -sf "$CHECKSUMMED_NATIVE_LIBRARY_FILE" "$NATIVE_LIBRARY_LINK"
+			[ -f "$native_library_link" ] || ln -sf "$checksummed_native_library_file" "$native_library_link"
 		done
 	done
 }
@@ -594,83 +592,83 @@ start_version() {
 
 	# TODO: Maybe decide stuff with the dedicated status page? It'd be a mess to
 	# support custom URLs though.
-	if curl -s -f "$MINEKISS_AUTH_SERVER_URL" > /dev/null && [ "$MINEKISS_OFFLINE" = "" ]
+	if curl -s -f "$MINEKISS_AUTH_SERVER_URL" > /dev/null && [ ! "$MINEKISS_OFFLINE" ]
 	then
 		# TODO: Handle missing accounts.
 
 		# Authentication
-		SELECTED_ACCOUNT="$(cat "$USERDATA_DIR/selected_account")"
-		SELECTED_ACCOUNT_DIR="$USERDATA_DIR/accounts/$SELECTED_ACCOUNT"
-		SELECTED_UUID="$(cat "$SELECTED_ACCOUNT_DIR/profiles/selected_uuid")"
-		SELECTED_USERNAME="$(cat "$SELECTED_ACCOUNT_DIR/profiles/$SELECTED_UUID")"
-		AUTH_TOKEN="$(cat "$SELECTED_ACCOUNT_DIR/auth_token")"
+		selected_account="$(cat "$userdata_dir/selected_account")"
+		selected_account_dir="$userdata_dir/accounts/$selected_account"
+		selected_uuid="$(cat "$selected_account_dir/profiles/selected_uuid")"
+		selected_username="$(cat "$selected_account_dir/profiles/$selected_uuid")"
+		auth_token="$(cat "$selected_account_dir/auth_token")"
 
-		if ! token_is_valid "$AUTH_TOKEN"
+		if ! token_is_valid "$auth_token"
 		then
 			warning "Invalid auth token: access required."
-			account_login "$SELECTED_ACCOUNT"
+			account_login "$selected_account"
 		fi
 	else
 		# Ugh, there has to be a better way of doing this
-		SELECTED_ACCOUNT='""'
-		SELECTED_ACCOUNT_DIR='""'
-		SELECTED_UUID='""'
-		SELECTED_USERNAME='""'
+		selected_account='""'
+		selected_account_dir='""'
+		selected_uuid='""'
+		selected_username='""'
 
 		warning "Unable to connect to the authentication server, offline mode enabled!"
 		MINEKISS_OFFLINE=1
-		prompt "Offline username:" SELECTED_USERNAME
+		prompt "Offline username:" selected_username
 	fi
 
-	download "$VERSION"
+	download "$version"
 
-	[ "$MINEKISS_INTEGRITY" = "0" ] && prompt "Validation failed, attempt running the game anyways? [Enter|^C]:" ANSWER
+	[ "$MINEKISS_INTEGRITY" = "0" ] && prompt "Validation failed, attempt running the game anyways? [Enter|^C]:" answer
 
-	CLASSPATH="$(get_library_index_from_metadata_file "$VERSION_METADATA_FILE" | awk '{print $1}' | tr "\n" ":")"
-	CLASSPATH="$CLASSPATH$VERSION_CLIENT_FILE"
+	classpath="$(get_library_index_from_metadata_file "$version_metadata_file" | awk '{print $1}' | tr "\n" ":")"
+	classpath="$classpath$version_client_file"
 
-	VERSION_MAIN_CLASS="$(jq -r ".mainClass" "$VERSION_METADATA_FILE")"
+	version_main_class="$(jq -r ".mainClass" "$version_metadata_file")"
 
-	# TODO: Find a way to manage stuff like resolution which is behind a rule.
-	# TODO: Format all arguments.
-	GAME_ARGUMENTS="$(get_unformatted_game_arguments_from_metadata_file "$VERSION_METADATA_FILE")"
+	# todo: find a way to manage stuff like resolution which is behind a rule.
+	# todo: format all arguments.
+	game_arguments="$(get_unformatted_game_arguments_from_metadata_file "$version_metadata_file")"
 
-	if [ "$VERSION_INHERITS" ]
+	if [ "$version_inherits" ]
 	then
-		CLASSPATH="$CLASSPATH:$(get_library_index_from_metadata_file "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json" | awk '{print $1}' | tr "\n" ":")"
-		ASSET_INDEX_ID="${ASSET_INDEX_ID:-$INHERITED_VERSION_ASSET_INDEX_ID}"
-		INHERITED_VERSION_GAME_ARGUMENTS="$(get_unformatted_game_arguments_from_metadata_file "$INHERITED_VERSION_PATH/$VERSION_INHERITS.json")"
-		GAME_ARGUMENTS="$INHERITED_VERSION_GAME_ARGUMENTS $GAME_ARGUMENTS"
+		classpath="$classpath:$(get_library_index_from_metadata_file "$inherited_version_path/$version_inherits.json" | awk '{print $1}' | tr "\n" ":")"
+		asset_index_id="${asset_index_id:-$inherited_version_asset_index_id}"
+		inherited_version_game_arguments="$(get_unformatted_game_arguments_from_metadata_file "$inherited_version_path/$version_inherits.json")"
+		game_arguments="$inherited_version_game_arguments $game_arguments"
 	fi
 
 	# I have no idea how ${user_properties} is supposed to work
-	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" | sed \
-	-e "s|\${version_name}|$VERSION|" \
+	game_arguments="$(printf "%s\n" "$game_arguments" | sed \
+	-e "s|\${version_name}|$version|" \
 	-e "s|\${assets_root}|$MINEKISS_ASSETS_DIR|" \
-	-e "s|\${assets_index_name}|$ASSET_INDEX_ID|" \
-	-e "s|\${version_type}|$(jq -r .type "$VERSION_METADATA_FILE")|" \
+	-e "s|\${assets_index_name}|$asset_index_id|" \
+	-e "s|\${version_type}|$(jq -r .type "$version_metadata_file")|" \
 	-e "s|\${game_directory}|$MINEKISS_GAME_DIRECTORY|" \
 	-e "s|\${user_properties}|{}|" \
-	-e "s|\${auth_uuid}|$SELECTED_UUID|" \
-	-e "s|\${auth_access_token}|$AUTH_TOKEN|" \
-	-e "s|\${auth_player_name}|$SELECTED_USERNAME|")"
+	-e "s|\${auth_uuid}|$selected_uuid|" \
+	-e "s|\${auth_access_token}|$auth_token|" \
+	-e "s|\${auth_player_name}|$selected_username|")"
 
 	# Legacy argument formatting for compatibility.
-	GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
-	| sed "s|\${auth_session}|$AUTH_TOKEN|")"
+	game_arguments="$(printf "%s\n" "$game_arguments" \
+	| sed "s|\${auth_session}|$auth_token|")"
 
 	# Virtual assets support
-	if jq -e .virtual "$MINEKISS_ASSETS_DIR/indexes/$ASSET_INDEX_ID.json" > /dev/null
+	if jq -e .virtual "$MINEKISS_ASSETS_DIR/indexes/$asset_index_id.json" > /dev/null
 	then
-		GAME_ARGUMENTS="$(printf "%s\n" "$GAME_ARGUMENTS" \
-		| sed "s|\${game_assets}|$MINEKISS_ASSETS_DIR/virtual/$ASSET_INDEX_ID|")"
+		game_arguments="$(printf "%s\n" "$game_arguments" \
+		| sed "s|\${game_assets}|$MINEKISS_ASSETS_DIR/virtual/$asset_index_id|")"
 	fi
 
 	if [ "$JAVA_HOME" ]
 	then
-		JAVA="$JAVA_HOME/bin/java"
+		java="$JAVA_HOME/bin/java"
 	else
-		JAVA="java"
+		java="java"
 	fi
 
 	# TODO: Read metadata from the instance to choose the right Java version.
@@ -679,66 +677,66 @@ start_version() {
 	# We need word splitting because the arguments are dynamically specified
 	# in the version manifest.
 	# shellcheck disable=SC2086
-	"$JAVA" -Djava.library.path="$MINEKISS_VERSIONS_DIR/$VERSION/lib" -cp "$CLASSPATH" $VERSION_MAIN_CLASS $GAME_ARGUMENTS
+	"$java" -Djava.library.path="$MINEKISS_VERSIONS_DIR/$version/lib" -cp "$classpath" $version_main_class $game_arguments
 }
 
 list_versions() {
 	# Printing with the format itself allows us to avoid a whole subshell.
 	#
-	# INFO_FORMAT is intended to be parsed as a format string.
+	# info_format is intended to be parsed as a format string.
 	# shellcheck disable=2059
-	is_directory_empty "$MINEKISS_VERSIONS_DIR" || printf -- "$INFO_FORMAT" "$MINEKISS_VERSIONS_DIR"/*
+	is_directory_empty "$MINEKISS_VERSIONS_DIR" || printf -- "$info_format" "$MINEKISS_VERSIONS_DIR"/*
 }
 
 # Configuration
 
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 
-USERDATA_DIR="$XDG_DATA_HOME/minekiss"
+userdata_dir="$XDG_DATA_HOME/minekiss"
 
 MINEKISS_MANIFEST_URL="${MINEKISS_MANIFEST_URL:-"https://launchermeta.mojang.com/mc/game/version_manifest.json"}"
 MINEKISS_RESOURCES_URL="${MINEKISS_RESOURCES_URL:-"https://resources.download.minecraft.net"}"
 MINEKISS_AUTH_SERVER_URL="${MINEKISS_AUTH_SERVER_URL:-"https://authserver.mojang.com"}"
-MINEKISS_ASSETS_DIR="${MINEKISS_ASSETS_DIR:-"$USERDATA_DIR/assets"}"
-MINEKISS_LIBRARIES_DIR="${MINEKISS_LIBRARIES_DIR:-"$USERDATA_DIR/libraries"}"
-MINEKISS_VERSIONS_DIR="${MINEKISS_VERSIONS_DIR:-"$USERDATA_DIR/versions"}"
+MINEKISS_ASSETS_DIR="${MINEKISS_ASSETS_DIR:-"$userdata_dir/assets"}"
+MINEKISS_LIBRARIES_DIR="${MINEKISS_LIBRARIES_DIR:-"$userdata_dir/libraries"}"
+MINEKISS_VERSIONS_DIR="${MINEKISS_VERSIONS_DIR:-"$userdata_dir/versions"}"
 MINEKISS_GAME_DIRECTORY="${MINEKISS_GAME_DIRECTORY:-"."}"
 MINEKISS_TEMP_DIR="${MINEKISS_TEMP_DIR:-"/tmp/minekiss"}/$$"
 
-VERSION_MANIFEST_FILE="$USERDATA_DIR/version_manifest.json"
+version_manifest_file="$userdata_dir/version_manifest.json"
 
 mkdir -p "$MINEKISS_TEMP_DIR"
-mkdir -p "$USERDATA_DIR"
+mkdir -p "$userdata_dir"
 
-[ -f "$USERDATA_DIR/client_id" ] || (umask 077; uuidgen > "$USERDATA_DIR/client_id")
+[ -f "$userdata_dir/client_id" ] || (umask 077; uuidgen > "$userdata_dir/client_id")
 
-[ -f "$USERDATA_DIR/selected_account" ] || "$USERDATA_DIR/selected_account"
+[ -f "$userdata_dir/selected_account" ] || "$userdata_dir/selected_account"
 
 if [ -t 1 ]
 then
-	BOLD_MODIFIER="$(tput bold)"
-	RED_COLOR="$(tput setaf 1)"
-	GREEN_COLOR="$(tput setaf 2)"
-	YELLOW_COLOR="$(tput setaf 3)"
-	RESET_COLOR="$(tput sgr0)"
+	bold_modifier="$(tput bold)"
+	red_color="$(tput setaf 1)"
+	green_color="$(tput setaf 2)"
+	yellow_color="$(tput setaf 3)"
+	reset_color="$(tput sgr0)"
 
 	if [ "$KISS_STYLE" ]
 	then
-		ERROR_FORMAT="$BOLD_MODIFIER$YELLOW_COLOR"ERROR"$RESET_COLOR"' %s\n'
-		WARNING_FORMAT="$BOLD_MODIFIER$YELLOW_COLOR"WARNING"$RESET_COLOR"' %s\n'
-		INFO_FORMAT="$BOLD_MODIFIER$YELLOW_COLOR->$RESET_COLOR"' %s\n'
-		PROMPT_FORMAT='%s '
+		error_format="$bold_modifier$yellow_color"ERROR"$reset_color"' %s\n'
+		warning_format="$bold_modifier$yellow_color"WARNING"$reset_color"' %s\n'
+		info_format="$bold_modifier$yellow_color->$reset_color"' %s\n'
+		prompt_format='%s '
 	else
-		ERROR_FORMAT="$BOLD_MODIFIER$RED_COLOR"XX"$RESET_COLOR"' %s\n'
-		WARNING_FORMAT="$BOLD_MODIFIER$YELLOW_COLOR"!!"$RESET_COLOR"' %s\n'
-		INFO_FORMAT="$BOLD_MODIFIER$GREEN_COLOR->$RESET_COLOR"' %s\n'
-		PROMPT_FORMAT="$BOLD_MODIFIER$GREEN_COLOR<-$RESET_COLOR"' %s '
+		error_format="$bold_modifier$red_color"XX"$reset_color"' %s\n'
+		warning_format="$bold_modifier$yellow_color"!!"$reset_color"' %s\n'
+		info_format="$bold_modifier$green_color->$reset_color"' %s\n'
+		prompt_format="$bold_modifier$green_color<-$reset_color"' %s '
 	fi
 else
-	ERROR_FORMAT="%s\n"
-	WARNING_FORMAT="%s\n"
-	INFO_FORMAT="%s\n"
-	PROMPT_FORMAT="%s\n"
+	error_format="%s\n"
+	warning_format="%s\n"
+	info_format="%s\n"
+	prompt_format="%s\n"
 fi
 
 
@@ -761,13 +759,13 @@ if [ "$1" ]
 then
 	error "Unrecognized command."
 else
-	EXECUTABLE_NAME="$(basename "$0")"
-	info "$EXECUTABLE_NAME [d|s|v] [version]"
+	executable_name="$(basename "$0")"
+	info "$executable_name [d|s|v] [version]"
 	info "download Verify and download a Minecraft version into the cache directory"
 	info "start    Start a Minecraft version into the current directory"
 	info "versions List all currently downloaded versions"
 	info
-	info "$EXECUTABLE_NAME [a|l|se|ac] [account]"
+	info "$executable_name [a|l|se|ac] [account]"
 	info "authenticate Authenticate or refresh an account"
 	info "logout       Log out off an account"
 	info "select       Select an account as the default"
