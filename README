@@ -1,0 +1,19 @@
+minekiss is a shitty Minecraft launcher written in POSIX shell.
+
+Yes, you heard that right. This should in theory only need a POSIX compliant
+shell, some of it utilities (awk, sed, head etc.), curl, jq and Java of course.
+
+Right now it's still hardcoded to download Linux native libraries, doesn't
+support Microsoft accounts yet and there's still quite a lot of stuff to do.
+Look for "TODO" comments in the script.
+
+It's usable though, and I unironically use it to run Minecraft.
+
+It works with normal FabricMC version definitions. Just specify the data dir as
+a destination for its installer, disabling profile creation if you don't want
+junk files since they'll be unused.
+
+I guess this will make more sense when KISS Linux will have decent Java support.
+
+This software is under the Unlicense, which means that you can do anything you
+want with it, no strings attached or attribution required.
