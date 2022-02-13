@@ -1,3 +1,7 @@
+WARNING: This project has been archived as I stopped playing Minecraft. It has
+been a fun, albeit very broken, little project. Obviously you can still fork it
+and do whatever you want with the project, being in the public domain.
+
 minekiss is a shitty Minecraft launcher written in POSIX shell.
 
 Yes, you heard that right. This should in theory only need a POSIX compliant
